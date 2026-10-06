@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - main
+    paths:
+      - "infra/relay/**"
+      - "packages/contracts/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/deploy-relay.yml"
   # Alchemy does not redeploy the Worker when only a Config value read in its
   # Init changes (alchemy-run/alchemy#1831), so a changed repository variable
   # needs a forced deploy to reach production.
@@ -27,8 +32,8 @@ jobs:
   deploy_relay:
     name: Deploy production relay
     # A manual run from another branch would deploy that branch to production.
-    if: github.ref == 'refs/heads/main'
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    if: github.ref == 'refs/heads/main' && vars.RELAY_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment:
       name: production
@@ -42,6 +47,7 @@ jobs:
       RELAY_TUNNEL_CLEANUP_MODE: ${{ vars.RELAY_TUNNEL_CLEANUP_MODE }}
       CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
       CLERK_JWT_AUDIENCE: ${{ vars.CLERK_JWT_AUDIENCE }}
+      APNS_ENABLED: ${{ vars.APNS_ENABLED || 'false' }}
       APNS_ENVIRONMENT: ${{ vars.APNS_ENVIRONMENT }}
       APNS_TEAM_ID: ${{ vars.APNS_TEAM_ID }}
       APNS_KEY_ID: ${{ vars.APNS_KEY_ID }}
