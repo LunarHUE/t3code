@@ -5,12 +5,13 @@ import { verifyPreloadBundle } from "./verify-preload-bundle.mjs";
 const validPreload = `
   const electron = require("electron");
   const PICK_FOLDER_CHANNEL = "desktop:pick-folder";
-  electron.contextBridge.exposeInMainWorld("__clerk_internal_electron_passkeys", {});
   electron.contextBridge.exposeInMainWorld("desktopBridge", {
     getClientPlatform: () => process.platform,
     getLocalEnvironmentBootstraps: () => [],
     getPathForFile: () => "",
     pickFolder: (options) => electron.ipcRenderer.invoke(PICK_FOLDER_CHANNEL, options),
+    readAccountCredential: (relayUrl) => electron.ipcRenderer.invoke("desktop:account-credential:read", relayUrl),
+    writeAccountCredential: (relayUrl, value) => electron.ipcRenderer.invoke("desktop:account-credential:write", relayUrl, value),
   });
 `;
 
@@ -20,7 +21,6 @@ describe("desktop preload bundle verifier", () => {
       () =>
         verifyPreloadBundle(`
           "desktopBridge getClientPlatform getLocalEnvironmentBootstraps pickFolder";
-          "__clerk_internal_electron_passkeys";
           require("electron");
         `),
       /missing executable APIs/,
@@ -39,6 +39,16 @@ describe("desktop preload bundle verifier", () => {
       /missing executable APIs: getClientPlatform/,
     );
   });
+
+  it.each(["readAccountCredential", "writeAccountCredential"])(
+    "rejects a missing secure account credential method %s",
+    (method) => {
+      assert.throws(
+        () => verifyPreloadBundle(validPreload.replace(`${method}:`, `removed${method}:`)),
+        new RegExp(`missing executable APIs: ${method}`),
+      );
+    },
+  );
 
   it("accepts a required API exposed through a function alias", () => {
     assert.doesNotThrow(() =>
