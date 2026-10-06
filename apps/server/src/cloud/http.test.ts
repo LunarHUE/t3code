@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -22,7 +23,12 @@ import {
 } from "effect/http";
 import * as NetAddress from "effect/net/NetAddress";
 
-import { DESKTOP_UPDATE_RESTART_MARKER_FILE, EnvironmentId } from "@t3tools/contracts";
+import {
+  DESKTOP_UPDATE_RESTART_MARKER_FILE,
+  EnvironmentId,
+  type ExecutionEnvironmentDescriptor,
+} from "@t3tools/contracts";
+import { decodeRelayJwt } from "@t3tools/shared/relayJwt";
 import { RelayClientTracer } from "@t3tools/shared/relayTracing";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
@@ -39,6 +45,7 @@ import * as AgentAwarenessRelay from "../relay/AgentAwarenessRelay.ts";
 import { CLOUD_CLI_DESIRED_LINK_SECRET } from "./CliState.ts";
 import * as CliTokenManager from "./CliTokenManager.ts";
 import {
+  RelayEnvironmentLinkRequest,
   RelayManagedEndpointRecoveryRegistrationRequest,
   type RelayLinkProofRequest,
 } from "@t3tools/contracts/relay";
@@ -109,6 +116,9 @@ const startManagedCloudTunnelIfOriginConfirmed = (
   ...args: Parameters<CloudLink.CloudLink["Service"]["startManagedTunnelIfOriginConfirmed"]>
 ) => CloudLink.CloudLink.use((link) => link.startManagedTunnelIfOriginConfirmed(...args));
 
+const decodeLinkRequest = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(RelayEnvironmentLinkRequest),
+);
 const decodeManagedTunnelRecoveryRegistration = Schema.decodeUnknownEffect(
   Schema.fromJsonString(RelayManagedEndpointRecoveryRegistrationRequest),
 );
@@ -373,6 +383,7 @@ describe("releaseManagedTunnelOnShutdown", () => {
     readonly onRequest?: (request: HttpClientRequest.HttpClientRequest) => Effect.Effect<void>;
     readonly respond?: () => Response;
     readonly respondEffect?: Effect.Effect<Response>;
+    readonly descriptor?: ExecutionEnvironmentDescriptor;
   }
 
   // Writes the launcher's durable state file into this test's baseDir with
@@ -418,7 +429,9 @@ describe("releaseManagedTunnelOnShutdown", () => {
           ServerEnvironment.ServerEnvironment,
           ServerEnvironment.ServerEnvironment.of({
             getEnvironmentId: Effect.succeed(EnvironmentId.make("env_123")),
-            getDescriptor: Effect.die("unused"),
+            getDescriptor: harness.descriptor
+              ? Effect.succeed(harness.descriptor)
+              : Effect.die("unused"),
           }),
         ),
         Effect.provideService(
@@ -1152,6 +1165,49 @@ describe("releaseManagedTunnelOnShutdown", () => {
       expect(applyConfigCalls).toEqual([nextConfig]);
     }),
   );
+
+  it.effect("links with the private network URL in place of the loopback origin", () => {
+    const { store } = makeMemorySecretStore([[CLOUD_CLI_DESIRED_LINK_SECRET, "managed"]]);
+    const requests: Array<HttpClientRequest.HttpClientRequest> = [];
+    return Effect.gen(function* () {
+      // The relay rejects the link; this test only inspects the signed proof.
+      yield* Effect.flip(reconcileDesiredCloudLink("http://127.0.0.1:3773"));
+      const body = requests[1]?.body;
+      expect(body?._tag).toBe("Uint8Array");
+      if (body?._tag !== "Uint8Array") return;
+      const { proof } = yield* decodeLinkRequest(new TextDecoder().decode(body.body));
+      const payload = decodeRelayJwt(proof);
+      expect(payload.endpoint).toEqual({
+        httpBaseUrl: "https://box-1.dev.example.test",
+        wsBaseUrl: "wss://box-1.dev.example.test",
+        providerKind: "cloudflare_tunnel",
+      });
+      expect(payload.origin).toEqual({ localHttpHost: "127.0.0.1", localHttpPort: 3773 });
+    }).pipe(
+      provideReleaseHarness({
+        store,
+        applyConfigCalls: [],
+        requests,
+        descriptor: {
+          environmentId: EnvironmentId.make("env_123"),
+        } as ExecutionEnvironmentDescriptor,
+        respond: () =>
+          requests.length === 1
+            ? Response.json({ challenge: "challenge", expiresAt: "2030-01-01T00:00:00.000Z" })
+            : Response.json({ error: "rejected" }, { status: 400 }),
+      }),
+      Effect.provide(
+        ConfigProvider.layer(
+          ConfigProvider.fromEnv({
+            env: {
+              T3CODE_RELAY_URL: "https://relay.example.test",
+              T3CODE_RELAY_PRIVATE_URL: "https://box-1.dev.example.test",
+            },
+          }),
+        ),
+      ),
+    );
+  });
 
   it.effect("does not recover an environment without a managed tunnel credential", () => {
     const { store } = makeMemorySecretStore([

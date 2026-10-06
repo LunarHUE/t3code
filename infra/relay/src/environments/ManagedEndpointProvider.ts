@@ -150,6 +150,8 @@ export class ManagedEndpointProvider extends Context.Service<
       readonly userId: string;
       readonly environmentId: string;
       readonly origin: RelayManagedEndpointOrigin;
+      /** The endpoint the environment signed into its link proof. */
+      readonly requestedEndpoint?: RelayManagedEndpoint;
     }) => Effect.Effect<ManagedEndpointProvisioningResult, ManagedEndpointProviderError>;
     readonly reconcileOrigin: (input: {
       readonly userId: string;

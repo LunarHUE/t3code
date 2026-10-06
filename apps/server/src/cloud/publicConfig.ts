@@ -13,20 +13,22 @@ declare const __T3CODE_BUILD_RELAY_CLIENT_OTLP_TRACES_TOKEN__: string | undefine
 const CLOUD_CLI_OAUTH_LOOPBACK_PORT = 34338;
 const CLOUD_CLI_OAUTH_SCOPES = ["account"] as const;
 
-function validateRelayUrl(value: string) {
-  const relayUrl = normalizeSecureRelayUrl(value);
-  return relayUrl === null
+const validateSecureOrigin = (name: string) => (value: string) => {
+  const origin = normalizeSecureRelayUrl(value);
+  return origin === null
     ? Effect.fail(
         new Config.ConfigError(
           new Schema.SchemaError(
             new SchemaIssue.InvalidValue({
-              message: "Relay URL must be a secure absolute HTTPS origin.",
+              message: `${name} must be a secure absolute HTTPS origin.`,
             }),
           ),
         ),
       )
-    : Effect.succeed(relayUrl);
-}
+    : Effect.succeed(origin);
+};
+
+const validateRelayUrl = validateSecureOrigin("Relay URL");
 
 function readBuildTimeValue(value: string | undefined): string {
   return typeof value === "undefined" ? "" : value.trim();
@@ -85,6 +87,16 @@ export function makeRelayUrlConfig(fallback = buildTimeRelayUrl) {
 }
 
 export const relayUrlConfig = makeRelayUrlConfig();
+
+/**
+ * This environment's HTTPS origin on a private network. A self-hosted relay
+ * configured with matching domains advertises it to clients instead of
+ * provisioning a managed tunnel.
+ */
+export const relayPrivateUrlConfig = Config.NonEmptyString("T3CODE_RELAY_PRIVATE_URL").pipe(
+  Config.mapEffect(validateSecureOrigin("T3CODE_RELAY_PRIVATE_URL")),
+  Config.option,
+);
 
 /**
  * Hosted app origin used for out-of-band OAuth on headless

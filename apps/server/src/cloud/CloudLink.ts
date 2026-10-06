@@ -107,7 +107,7 @@ import {
 } from "./config.ts";
 import { getOrCreateEnvironmentKeyPairFromSecretStore } from "./environmentKeys.ts";
 import * as ManagedEndpointRuntime from "./ManagedEndpointRuntime.ts";
-import { relayUrlConfig } from "./publicConfig.ts";
+import { relayPrivateUrlConfig, relayUrlConfig } from "./publicConfig.ts";
 import { filterRelayResponse, relayRequestError, shouldRetryCloudLink } from "./relayResponse.ts";
 import {
   SERVICE_STATE_FILE,
@@ -947,6 +947,24 @@ const make = Effect.gen(function* () {
       const mode = yield* readCliDesiredLinkMode.pipe(withSecrets);
       const managedTunnelsEnabled = mode !== "publish_only";
       const relayUrl = yield* requireRelayUrl;
+      const privateUrl = yield* relayPrivateUrlConfig.pipe(
+        Effect.mapError(
+          () =>
+            new EnvironmentHttpInternalServerError({
+              message: "T3CODE_RELAY_PRIVATE_URL must be a secure absolute HTTPS origin.",
+            }),
+        ),
+      );
+      // A private relay advertises the URL this environment reports instead
+      // of provisioning a tunnel, so the proof carries it in place of the
+      // loopback origin. The provider kind still requests a managed endpoint.
+      const endpoint =
+        managedTunnelsEnabled && Option.isSome(privateUrl)
+          ? {
+              httpBaseUrl: privateUrl.value,
+              wsBaseUrl: privateUrl.value.replace(/^https:/u, "wss:"),
+            }
+          : { httpBaseUrl: parsedOrigin.httpBaseUrl, wsBaseUrl: parsedOrigin.wsBaseUrl };
       const challenge = yield* relayClientRequest({
         url: `${relayUrl}/v1/client/environment-link-challenges`,
         token: token.accessToken,
@@ -962,8 +980,7 @@ const make = Effect.gen(function* () {
           challenge: challenge.challenge,
           relayIssuer: relayUrl,
           endpoint: {
-            httpBaseUrl: parsedOrigin.httpBaseUrl,
-            wsBaseUrl: parsedOrigin.wsBaseUrl,
+            ...endpoint,
             providerKind: managedTunnelsEnabled ? "cloudflare_tunnel" : "manual",
           },
           origin: parsedOrigin.origin,

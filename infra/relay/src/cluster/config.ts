@@ -5,6 +5,7 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import { RelayConfiguration } from "../Config.ts";
+import { parsePrivateEndpointDomains, privateEndpointForUrl } from "../privateEndpoints.ts";
 
 const EndpointInput = Schema.Array(
   Schema.Struct({
@@ -27,15 +28,8 @@ export function parsePrivateEndpoints(json: string) {
   const entries = decodeEndpoints(json);
   const seen = new Set<string>();
   return entries.map(({ userId, environmentId, url }) => {
-    const parsed = new URL(url);
-    if (
-      parsed.protocol !== "https:" ||
-      parsed.username ||
-      parsed.password ||
-      parsed.search ||
-      parsed.hash ||
-      parsed.pathname !== "/"
-    ) {
+    const endpoint = privateEndpointForUrl(url);
+    if (endpoint === null) {
       throw new Error(
         "Private endpoints must be HTTPS origins without credentials, paths, or query strings.",
       );
@@ -47,8 +41,7 @@ export function parsePrivateEndpoints(json: string) {
       userId,
       environmentId,
       endpointKey: privateEndpointKey(userId, environmentId),
-      httpBaseUrl: parsed.href,
-      wsBaseUrl: `wss://${parsed.host}/ws`,
+      ...endpoint,
     };
   });
 }
@@ -75,6 +68,9 @@ export const layer = Layer.effect(
       return yield* Effect.die("Relay signing key must be Ed25519.");
     const privateEndpoints = parsePrivateEndpoints(
       yield* Config.String("RELAY_PRIVATE_ENDPOINTS").pipe(Config.withDefault("[]")),
+    );
+    const privateEndpointDomains = parsePrivateEndpointDomains(
+      yield* Config.String("RELAY_PRIVATE_ENDPOINT_DOMAINS").pipe(Config.withDefault("")),
     );
     const oidcIssuer = new URL(yield* Config.NonEmptyString("OIDC_ISSUER_URL"));
     if (
@@ -131,6 +127,7 @@ export const layer = Layer.effect(
     return RelayConfiguration.of({
       relayIssuer: issuerUrl.origin,
       privateEndpoints,
+      privateEndpointDomains,
       oidc,
       cloudMintPrivateKey,
       cloudMintPublicKey: NodeCrypto.createPublicKey(key)

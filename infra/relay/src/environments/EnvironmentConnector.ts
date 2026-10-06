@@ -42,6 +42,7 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientError from "effect/http/HttpClientError";
 
+import { privateEndpointUnderDomains } from "../privateEndpoints.ts";
 import * as EnvironmentLinks from "./EnvironmentLinks.ts";
 import * as ManagedEndpointAllocations from "./ManagedEndpointAllocations.ts";
 import * as RelayConfiguration from "../Config.ts";
@@ -318,12 +319,14 @@ export function validateManagedEndpoint(input: {
   readonly allocation: ManagedEndpointAllocations.ManagedEndpointAllocation | null;
   readonly baseDomain: string | undefined;
   readonly privateEndpoints?: RelayConfiguration.RelayConfiguration["Service"]["privateEndpoints"];
+  readonly privateEndpointDomains?: ReadonlyArray<string>;
 }): Result.Result<RelayManagedEndpoint, ManagedEndpointValidationFailure> {
   const { link, allocation, baseDomain } = input;
   if (link.endpoint.providerKind === "manual" && input.privateEndpoints) {
-    const configured = input.privateEndpoints.find(
-      (entry) => entry.environmentId === link.environmentId,
-    );
+    // Same precedence as provisioning: a per-environment entry, then the shared domains.
+    const configured =
+      input.privateEndpoints.find((entry) => entry.environmentId === link.environmentId) ??
+      privateEndpointUnderDomains(link.endpoint.httpBaseUrl, input.privateEndpointDomains ?? []);
     return configured &&
       configured.httpBaseUrl === link.endpoint.httpBaseUrl &&
       configured.wsBaseUrl === link.endpoint.wsBaseUrl
@@ -424,6 +427,7 @@ const make = Effect.gen(function* () {
               privateEndpoints: settings.privateEndpoints.filter(
                 (entry) => entry.userId === input.userId,
               ),
+              privateEndpointDomains: settings.privateEndpointDomains ?? [],
             }
           : {}),
       });

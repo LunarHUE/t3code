@@ -3,6 +3,7 @@ import * as Layer from "effect/Layer";
 import { HookInbox } from "../hooks/HookInbox.ts";
 import { privateEndpointKey } from "./config.ts";
 import { RelayConfiguration } from "../Config.ts";
+import { privateEndpointUnderDomains } from "../privateEndpoints.ts";
 import * as Provider from "../environments/ManagedEndpointProvider.ts";
 
 export const layer = Layer.effect(
@@ -12,9 +13,18 @@ export const layer = Layer.effect(
     const inbox = yield* HookInbox;
     return Provider.ManagedEndpointProvider.of({
       provision: (input) => {
-        const endpoint = config.privateEndpoints?.find(
-          (entry) => entry.userId === input.userId && entry.environmentId === input.environmentId,
-        );
+        // A per-environment entry wins; otherwise the environment may claim
+        // its own origin under one of the shared domains.
+        const endpoint =
+          config.privateEndpoints?.find(
+            (entry) => entry.userId === input.userId && entry.environmentId === input.environmentId,
+          ) ??
+          (input.requestedEndpoint
+            ? privateEndpointUnderDomains(
+                input.requestedEndpoint.httpBaseUrl,
+                config.privateEndpointDomains ?? [],
+              )
+            : null);
         if (!endpoint)
           return Effect.fail(
             new Provider.ManagedEndpointProvisioningFailed({

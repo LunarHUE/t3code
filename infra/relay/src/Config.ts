@@ -67,6 +67,8 @@ export class RelayConfiguration extends Context.Service<
       readonly httpBaseUrl: string;
       readonly wsBaseUrl: string;
     }>;
+    /** Domains under which any environment may claim its own VPN endpoint. */
+    readonly privateEndpointDomains?: ReadonlyArray<string>;
     readonly oidc?: {
       readonly issuerUrl: string;
       readonly clientId: string;

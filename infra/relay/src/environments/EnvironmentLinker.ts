@@ -313,6 +313,7 @@ const make = Effect.gen(function* () {
             userId: input.userId,
             environmentId: verified.environmentId,
             origin: verified.origin,
+            requestedEndpoint: verified.endpoint,
           })
         : null;
       const endpoint = provisioned?.endpoint ?? verified.endpoint;

@@ -36,7 +36,7 @@ import {
   PUBLISH_AGENT_ACTIVITY_SECRET,
   RELAY_URL_SECRET,
 } from "../cloud/config.ts";
-import { relayUrlConfig } from "../cloud/publicConfig.ts";
+import { relayPrivateUrlConfig, relayUrlConfig } from "../cloud/publicConfig.ts";
 import * as RelayTracing from "../cloud/relayTracing.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
@@ -461,9 +461,9 @@ const linkEnvironmentForConnect = Effect.fn("cloud.cli.link_environment")(functi
 }) {
   const publishOnly = options.publishOnly ?? false;
   // Private relay deployments advertise VPN endpoints and return no connector to run.
-  const privateNetwork = yield* Config.Boolean("T3CODE_RELAY_PRIVATE_NETWORK").pipe(
-    Config.withDefault(false),
-  );
+  const privateNetwork =
+    (yield* Config.Boolean("T3CODE_RELAY_PRIVATE_NETWORK").pipe(Config.withDefault(false))) ||
+    Option.isSome(yield* relayPrivateUrlConfig);
   if (!publishOnly && !privateNetwork) {
     const relayClient = yield* RelayClient.RelayClient;
     const installed = yield* acquireRelayClientForLink(

@@ -82,9 +82,18 @@ For local integration tests, set `RELAY_CLUSTER_TEST_DATABASE_URL` to a disposab
 database named `t3_relay_test`, then run `vp test run infra/relay/src/cluster`.
 These tests delete fixture rows. Never use a production database.
 
-Set `T3CODE_RELAY_PRIVATE_NETWORK=true` on environment hosts when using the fork's
-CLI, so `t3 connect` skips installing cloudflared. The normal link flow is retained;
-the relay advertises only administrator-configured private HTTPS endpoints.
+The relay advertises private HTTPS endpoints instead of managed tunnels. There
+are two ways to authorize one:
+
+- `RELAY_PRIVATE_ENDPOINTS` pins a URL to one account's environment.
+- `RELAY_PRIVATE_ENDPOINT_DOMAINS` (comma-separated, e.g. `dev.example.com`)
+  lets any account's environment claim a URL on a subdomain. The host sets
+  `T3CODE_RELAY_PRIVATE_URL=https://box-1.dev.example.com` and runs
+  `t3 connect link`. New hosts need no relay change.
+
+A pinned entry wins over a claimed URL. Hosts with a pinned entry set
+`T3CODE_RELAY_PRIVATE_NETWORK=true` so `t3 connect` skips installing
+cloudflared. Setting `T3CODE_RELAY_PRIVATE_URL` also skips it.
 
 ### Cluster authentication
 
