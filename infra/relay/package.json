@@ -10,10 +10,12 @@
     "tunnels:census": "node scripts/tunnel-census.ts",
     "destroy": "alchemy destroy",
     "test": "vp test run --config ../../vite.config.ts --dir .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "cluster": "node src/cluster/main.ts"
   },
   "dependencies": {
     "@clerk/backend": "catalog:",
+    "@effect/platform-node": "catalog:",
     "@effect/sql-pg": "catalog:",
     "@effect/sql-sqlite-do": "catalog:",
     "@noble/curves": "catalog:",
@@ -27,7 +29,6 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260601.1",
-    "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
     "@types/node": "catalog:",
     "drizzle-kit": "1.0.0-rc.5-ab785fc",

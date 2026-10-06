@@ -317,8 +317,19 @@ export function validateManagedEndpoint(input: {
   readonly link: EnvironmentLinks.RelayLinkedEnvironmentRecord;
   readonly allocation: ManagedEndpointAllocations.ManagedEndpointAllocation | null;
   readonly baseDomain: string | undefined;
+  readonly privateEndpoints?: RelayConfiguration.RelayConfiguration["Service"]["privateEndpoints"];
 }): Result.Result<RelayManagedEndpoint, ManagedEndpointValidationFailure> {
   const { link, allocation, baseDomain } = input;
+  if (link.endpoint.providerKind === "manual" && input.privateEndpoints) {
+    const configured = input.privateEndpoints.find(
+      (entry) => entry.environmentId === link.environmentId,
+    );
+    return configured &&
+      configured.httpBaseUrl === link.endpoint.httpBaseUrl &&
+      configured.wsBaseUrl === link.endpoint.wsBaseUrl
+      ? Result.succeed(link.endpoint)
+      : Result.fail({ reason: "managed_endpoint_mismatch" });
+  }
   if (link.endpoint.providerKind !== "cloudflare_tunnel") {
     return Result.fail({
       reason: "endpoint_provider_not_managed",
@@ -400,6 +411,7 @@ const make = Effect.gen(function* () {
   const resolveManagedEndpoint = Effect.fn("relay.environment_connector.resolve_managed_endpoint")(
     function* (input: {
       readonly operation: "connect" | "status";
+      readonly userId: string;
       readonly link: EnvironmentLinks.RelayLinkedEnvironmentRecord;
       readonly allocation: ManagedEndpointAllocations.ManagedEndpointAllocation | null;
     }) {
@@ -407,6 +419,13 @@ const make = Effect.gen(function* () {
         link: input.link,
         allocation: input.allocation,
         baseDomain: settings.managedEndpointBaseDomain,
+        ...(settings.privateEndpoints
+          ? {
+              privateEndpoints: settings.privateEndpoints.filter(
+                (entry) => entry.userId === input.userId,
+              ),
+            }
+          : {}),
       });
       if (Result.isSuccess(result)) {
         return result.success;
@@ -443,6 +462,7 @@ const make = Effect.gen(function* () {
         });
       }
       const endpoint = yield* resolveManagedEndpoint({
+        userId: input.userId,
         operation: "status",
         link,
         allocation,
@@ -600,6 +620,7 @@ const make = Effect.gen(function* () {
         });
       }
       const endpoint = yield* resolveManagedEndpoint({
+        userId: input.userId,
         operation: "connect",
         link,
         allocation,

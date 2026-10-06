@@ -1,0 +1,11 @@
+**/node_modules
+**/.env
+**/.env.*
+**/.git
+**/dist
+**/coverage
+**/*.test.ts
+**/*.test.tsx
+**/.t3
+**/.alchemy
+**/*.tfstate*

@@ -13,7 +13,9 @@ There is no Blacksmith subscription or Kubernetes/Nix runner dependency.
   and stable version tags. Build macOS arm64/x64, Windows arm64/x64, and Linux
   arm64/x64. Preserve updater manifests, signing support, and CLI archives.
   Windows packages embed the same-architecture Linux CLI for WSL.
-- `deploy-relay.yml`: deploy our relay using our own production environment.
+- `relay-cluster.yml`: test cluster adapters against PostgreSQL, build the relay
+  container, and publish commit-tagged images on main/ci branch pushes or manual dispatch.
+- `deploy-relay.yml`: optional Cloudflare deployment; keep disabled for our cluster.
 
 Delete or comment out upstream additions for Discord announcements, marketing
 or hosted web deployments, npm/AUR publishing, mobile EAS/store releases and
@@ -42,15 +44,15 @@ Releases publish only after the quality and test jobs pass.
 
 ## Relay deployment
 
-The fork defaults to hosted Supabase PostgreSQL through Hyperdrive and Clerk.
-Axiom and mobile push are disabled without deleting their implementations.
-PlanetScale remains an optional deployment provider.
+Our primary deployment is the standalone Node relay and PostgreSQL on Kubernetes.
+The HCL root lives in [Infrastructure-Tofu/t3connect](https://github.com/LunarHUE/Infrastructure-Tofu/tree/master/t3connect).
+The image workflow builds from `infra/relay/Dockerfile`. It does not apply cluster
+changes from GitHub-hosted runners; apply OpenTofu from a machine on the VPN.
 
-Follow the [relay deployment guide](../infra/relay/README.md#deployment) for
-connection URLs, Clerk, Cloudflare token permissions, and GitHub configuration.
-Disabled integrations require no credentials or cloud resources. Preserve their
-upstream source during merges and retain the configuration boundaries.
+Preserve the upstream Cloudflare entrypoint and optional provider implementations
+when merging. The cluster runtime supplies private endpoint, PostgreSQL inbox,
+rate-limit, and scheduler adapters. Axiom and mobile push remain disabled there.
 
-`RELAY_DEPLOY_ENABLED` is a repository variable; leave it unset until deployment
-credentials are ready. The workflow applies external-database migrations before
-deploying Worker code. Preserve the upstream migration files when merging.
+`RELAY_DEPLOY_ENABLED` gates the optional Cloudflare workflow. Leave it unset/false
+for cluster hosting. The [Cloudflare guide](../infra/relay/README.md#deployment)
+remains available if that deployment is needed later.

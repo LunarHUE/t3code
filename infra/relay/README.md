@@ -74,7 +74,26 @@ vp run typecheck
 Backend changes should include tests. Prefer testing the real business logic with external
 dependencies represented at their boundary rather than mocking internal behavior.
 
+## Cluster deployment
+
+LunarHUE's private deployment uses `src/cluster/main.ts` and `Dockerfile`. It runs
+Node with direct PostgreSQL connections, keeping the Cloudflare entrypoint intact.
+The deployment root and operational instructions live in
+[Infrastructure-Tofu/t3connect](https://github.com/LunarHUE/Infrastructure-Tofu/tree/master/t3connect).
+
+The entrypoint accepts `serve`, `deliver`, `cleanup`, and `migrate-cluster`.
+The image workflow runs the cluster adapter tests against disposable PostgreSQL.
+For local integration tests, set `RELAY_CLUSTER_TEST_DATABASE_URL` to a disposable
+database named `t3_relay_test`, then run `vp test run infra/relay/src/cluster`.
+These tests delete fixture rows. Never use a production database.
+
+Set `T3CODE_RELAY_PRIVATE_NETWORK=true` on environment hosts when using the fork's
+CLI, so `t3 connect` skips installing cloudflared. The normal link flow is retained;
+the relay advertises only administrator-configured private HTTPS endpoints.
+
 ## Deployment
+
+The following instructions describe the optional Cloudflare deployment.
 
 This fork defaults to an existing PostgreSQL database through Cloudflare Hyperdrive,
 Clerk authentication, and disabled telemetry/mobile push. Upstream Axiom, APNs/FCM,

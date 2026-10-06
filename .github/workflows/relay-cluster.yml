@@ -1,0 +1,104 @@
+name: Cluster relay image
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, "ci/**"]
+    paths:
+      - infra/relay/**
+      - packages/**
+      - patches/**
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - package.json
+      - .github/workflows/relay-cluster.yml
+  pull_request:
+    paths:
+      - infra/relay/**
+      - packages/**
+      - .github/workflows/relay-cluster.yml
+permissions:
+  contents: read
+concurrency:
+  group: relay-cluster-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: relay-test-only
+          POSTGRES_DB: t3_relay_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+      - name: Migrate disposable database
+        run: vp run --filter t3code-relay db:migrate
+        env:
+          RELAY_MIGRATION_DATABASE_URL: postgresql://postgres:relay-test-only@localhost:5432/t3_relay_test
+      - name: Test cluster adapters
+        run: vp test run infra/relay/src/cluster
+        env:
+          RELAY_CLUSTER_TEST_DATABASE_URL: postgresql://postgres:relay-test-only@localhost:5432/t3_relay_test
+  image:
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build relay image
+        run: docker build -f infra/relay/Dockerfile -t "ghcr.io/lunarhue/t3code-relay:sha-$GITHUB_SHA" .
+      - name: Smoke-test the packaged runtime and migrations
+        run: |
+          docker network create relay-smoke
+          docker run -d --name relay-postgres --network relay-smoke \
+            -e POSTGRES_PASSWORD=relay-test-only -e POSTGRES_DB=t3_relay_test postgres:17-alpine
+          for attempt in $(seq 1 30); do
+            if docker exec relay-postgres pg_isready -U postgres; then break; fi
+            sleep 1
+          done
+          export RELAY_DATABASE_URL=postgresql://postgres:relay-test-only@relay-postgres:5432/t3_relay_test
+          export RELAY_MIGRATION_DATABASE_URL="$RELAY_DATABASE_URL"
+          docker run --rm --read-only --tmpfs /tmp --network relay-smoke \
+            -e RELAY_DATABASE_URL -e RELAY_MIGRATION_DATABASE_URL \
+            -w /app/infra/relay --entrypoint sh "ghcr.io/lunarhue/t3code-relay:sha-$GITHUB_SHA" \
+            -c './node_modules/.bin/drizzle-kit migrate --config drizzle.config.ts && node src/cluster/main.ts migrate-cluster'
+          openssl genpkey -algorithm ED25519 -out "$RUNNER_TEMP/relay-smoke.pem"
+          export RELAY_SIGNING_PRIVATE_KEY="$(cat "$RUNNER_TEMP/relay-smoke.pem")"
+          docker run -d --name relay-api --read-only --tmpfs /tmp --network relay-smoke \
+            -p 127.0.0.1:8080:8080 -e RELAY_DATABASE_URL -e RELAY_SIGNING_PRIVATE_KEY \
+            -e RELAY_URL=https://relay.example.test -e CLERK_SECRET_KEY=sk_test_fixture \
+            -e CLERK_PUBLISHABLE_KEY=pk_test_dGVzdC5jbGVyay5hY2NvdW50cy5kZXYk \
+            "ghcr.io/lunarhue/t3code-relay:sha-$GITHUB_SHA"
+          curl --fail --retry 15 --retry-connrefused --retry-delay 2 http://127.0.0.1:8080/health
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/v1/environments)" = 401
+          docker exec relay-api node infra/relay/src/cluster/main.ts cleanup
+      - name: Clean up smoke-test resources
+        if: always()
+        run: |
+          docker rm -f relay-api relay-postgres || true
+          docker network rm relay-smoke || true
+          rm -f "$RUNNER_TEMP/relay-smoke.pem"
+      - name: Publish immutable commit tag
+        if: github.event_name != 'pull_request' && github.repository == 'LunarHUE/t3code'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push "ghcr.io/lunarhue/t3code-relay:sha-$GITHUB_SHA"

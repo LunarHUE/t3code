@@ -59,6 +59,14 @@ export class RelayConfiguration extends Context.Service<
   RelayConfiguration,
   {
     readonly relayIssuer: string;
+    /** Administrator-owned VPN endpoints; absent in the upstream Cloudflare runtime. */
+    readonly privateEndpoints?: ReadonlyArray<{
+      readonly userId: string;
+      readonly environmentId: string;
+      readonly endpointKey: string;
+      readonly httpBaseUrl: string;
+      readonly wsBaseUrl: string;
+    }>;
     readonly apns: ApnsCredentials | null;
     readonly fcmServiceAccount?: Redacted.Redacted<string>;
     readonly clerkSecretKey: Redacted.Redacted<string>;

@@ -460,7 +460,11 @@ const linkEnvironmentForConnect = Effect.fn("cloud.cli.link_environment")(functi
   readonly publishOnly?: boolean;
 }) {
   const publishOnly = options.publishOnly ?? false;
-  if (!publishOnly) {
+  // Private relay deployments advertise VPN endpoints and return no connector to run.
+  const privateNetwork = yield* Config.Boolean("T3CODE_RELAY_PRIVATE_NETWORK").pipe(
+    Config.withDefault(false),
+  );
+  if (!publishOnly && !privateNetwork) {
     const relayClient = yield* RelayClient.RelayClient;
     const installed = yield* acquireRelayClientForLink(
       relayClient,

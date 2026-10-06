@@ -336,7 +336,8 @@ const make = Effect.gen(function* () {
       return {
         environmentId: verified.environmentId,
         endpoint,
-        endpointRuntime: provisioned?.runtime ?? null,
+        endpointRuntime:
+          provisioned?.endpoint.providerKind === "manual" ? null : (provisioned?.runtime ?? null),
         environmentCredential,
       };
     }),

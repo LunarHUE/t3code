@@ -107,6 +107,7 @@ const makeRequest = Effect.gen(function* () {
 });
 
 function layerTest(input?: {
+  readonly provision?: ManagedEndpointProvider.ManagedEndpointProvider["Service"]["provision"];
   readonly upsert?: EnvironmentLinks.EnvironmentLinks["Service"]["upsert"];
   readonly consume?: DpopProofs.DpopProofReplay["Service"]["consume"];
   readonly deprovision?: ManagedEndpointProvider.ManagedEndpointProvider["Service"]["deprovision"];
@@ -140,15 +141,17 @@ function layerTest(input?: {
           prepareDeprovision: () => Effect.succeed(null),
           deprovision: input?.deprovision ?? (() => Effect.succeed(true)),
           release: () => Effect.succeed(true),
-          provision: () =>
-            Effect.succeed({
-              endpoint: {
-                httpBaseUrl: "https://managed.example.test/",
-                wsBaseUrl: "wss://managed.example.test/ws",
-                providerKind: "cloudflare_tunnel",
-              },
-              runtime: { providerKind: "cloudflare_tunnel", connectorToken: "connector-token" },
-            }),
+          provision:
+            input?.provision ??
+            (() =>
+              Effect.succeed({
+                endpoint: {
+                  httpBaseUrl: "https://managed.example.test/",
+                  wsBaseUrl: "wss://managed.example.test/ws",
+                  providerKind: "cloudflare_tunnel",
+                },
+                runtime: { providerKind: "cloudflare_tunnel", connectorToken: "connector-token" },
+              })),
         }),
       ),
     ),
@@ -156,6 +159,34 @@ function layerTest(input?: {
 }
 
 describe("EnvironmentLinker", () => {
+  it.effect("advertises a private endpoint without asking the host to start a connector", () =>
+    Effect.gen(function* () {
+      const { request } = yield* makeRequest;
+      const linker = yield* EnvironmentLinker.EnvironmentLinker;
+      const linked = yield* linker.link({
+        userId: "user_123",
+        request: { ...request, managedTunnelsEnabled: true },
+      });
+      expect(linked.endpoint.providerKind).toBe("manual");
+      expect(linked.endpointRuntime).toBeNull();
+      expect(linked.environmentCredential).toBe("t3env_credential_secret");
+    }).pipe(
+      Effect.provide(
+        layerTest({
+          provision: () =>
+            Effect.succeed({
+              endpoint: {
+                providerKind: "manual",
+                httpBaseUrl: "https://private.example.test/",
+                wsBaseUrl: "wss://private.example.test/ws",
+              },
+              runtime: { providerKind: "manual", connectorToken: "unused-private-endpoint" },
+            }),
+        }),
+      ),
+    ),
+  );
+
   it.effect("uses verified JWT claims when linking an environment", () => {
     let persistedEnvironmentId: string | null = null;
     return Effect.gen(function* () {
