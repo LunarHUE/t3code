@@ -42,27 +42,15 @@ Releases publish only after the quality and test jobs pass.
 
 ## Relay deployment
 
-The retained Alchemy stack still provisions Cloudflare, PlanetScale PostgreSQL,
-and Axiom and uses Clerk. This workflow cleanup does not replace those providers
-or remove the relay's runtime telemetry. Those changes belong in `infra/relay`.
+The fork defaults to hosted Supabase PostgreSQL through Hyperdrive and Clerk.
+Axiom and mobile push are disabled without deleting their implementations.
+PlanetScale remains an optional deployment provider.
 
-Configure the `production` GitHub environment with our own values:
+Follow the [relay deployment guide](../infra/relay/README.md#deployment) for
+connection URLs, Clerk, Cloudflare token permissions, and GitHub configuration.
+Disabled integrations require no credentials or cloud resources. Preserve their
+upstream source during merges and retain the configuration boundaries.
 
-- Variables: `CLOUDFLARE_ACCOUNT_ID`, `PLANETSCALE_ORGANIZATION`, `AXIOM_ORG_ID`,
-  `RELAY_API_ZONE_NAME`, `RELAY_TUNNEL_ZONE_NAME`, `CLERK_PUBLISHABLE_KEY`, and
-  `CLERK_JWT_AUDIENCE`. `RELAY_DOMAIN` can override the derived relay hostname.
-- Secrets: `CLOUDFLARE_API_TOKEN`, `PLANETSCALE_API_TOKEN_ID`,
-  `PLANETSCALE_API_TOKEN`, `AXIOM_TOKEN`, and `CLERK_SECRET_KEY`.
-- Mobile push is off by default (`APNS_ENABLED=false`). If enabled later,
-  supply the APNS variables/secrets in the workflow; FCM is optional.
-
-Set the repository variable `RELAY_DEPLOY_ENABLED=true` when these are ready.
-Until then deployment is skipped. It runs from main on relevant source changes
-or manual dispatch. Leave `force` unchecked for configuration-only changes;
-forcing also replaces the Postgres runtime role and its password.
-
-`RELAY_TUNNEL_CLEANUP_MODE` and `RELAY_LEGACY_TUNNEL_CLEANUP_MODE` are optional
-production environment variables. Both default to `off`; review the upstream
-cleanup runbook before enabling either. Keep the upstream nullable
-`tunnel_released_at` migration with the corresponding relay/client changes.
-No deployment was performed as part of this cleanup.
+`RELAY_DEPLOY_ENABLED` is a repository variable; leave it unset until deployment
+credentials are ready. The workflow applies external-database migrations before
+deploying Worker code. Preserve the upstream migration files when merging.

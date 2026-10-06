@@ -9,6 +9,8 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
+import { databaseProvider, externalDatabaseOrigin } from "./externalDatabase.ts";
+
 import { relayDatabaseMode } from "./dbConfig.ts";
 
 export class RelayDb extends Context.Service<
@@ -73,10 +75,23 @@ export const PlanetscaleDatabase = Effect.gen(function* () {
   return { branch, database, runtimeRole };
 });
 
-export const RelayHyperdrive = Effect.gen(function* () {
-  const { runtimeRole } = yield* PlanetscaleDatabase;
-  return yield* Cloudflare.Hyperdrive.Connection("RelayHyperdrive", {
+export const ConfiguredDatabase = Effect.gen(function* () {
+  if ((yield* databaseProvider) === "external") {
+    const origin = yield* externalDatabaseOrigin;
+    return { origin, databaseName: origin.database, branchName: "external" };
+  }
+  const { database, branch, runtimeRole } = yield* PlanetscaleDatabase;
+  return {
     origin: runtimeRole.origin,
+    databaseName: database.name,
+    branchName: branch?.name ?? "main",
+  };
+});
+
+export const RelayHyperdrive = Effect.gen(function* () {
+  const { origin } = yield* ConfiguredDatabase;
+  return yield* Cloudflare.Hyperdrive.Connection("RelayHyperdrive", {
+    origin,
     caching: {
       disabled: true,
     },

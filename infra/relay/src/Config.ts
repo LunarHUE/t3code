@@ -81,3 +81,11 @@ export const make = (configuration: RelayConfiguration["Service"]) =>
 
 export const layer = (configuration: RelayConfiguration["Service"]) =>
   Layer.succeed(RelayConfiguration, make(configuration));
+
+// Keep provider implementations upstream-compatible; opt into their resources at deployment.
+export const telemetryEnabled = Config.Boolean("RELAY_TELEMETRY_ENABLED").pipe(
+  Config.withDefault(false),
+);
+export const mobilePushEnabled = Config.Boolean("RELAY_MOBILE_PUSH_ENABLED").pipe(
+  Config.withDefault(false),
+);

@@ -11,6 +11,8 @@ import * as Schema from "effect/Schema";
 import * as Tracer from "effect/Tracer";
 import { OtlpExporter, OtlpSerialization, OtlpTracer } from "effect/observability";
 
+import { telemetryEnabled } from "./Config.ts";
+
 import { relayResourceNameForStage } from "./deploymentConfig.ts";
 
 const relayRecentSpansQuery = (dataset: string) =>
@@ -25,6 +27,7 @@ const relayRecentSpansQuery = (dataset: string) =>
   ].join("\n");
 
 export const RelayObservability = Effect.gen(function* () {
+  if (!(yield* telemetryEnabled)) return undefined;
   const { stage } = yield* Alchemy.Stack;
   const traces = yield* Axiom.Dataset("RelayTracesDataset", {
     name: relayResourceNameForStage("t3-code-relay-traces", stage),

@@ -6,6 +6,9 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Drizzle from "alchemy/Drizzle";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
+import { databaseProvider } from "./src/externalDatabase.ts";
+import { telemetryEnabled } from "./src/Config.ts";
 import * as Planetscale from "alchemy/Planetscale";
 
 import { PublishClientConfig, tokenDigest } from "./src/clientConfig.ts";
@@ -18,15 +21,23 @@ export default Alchemy.Stack(
   "T3CodeRelay",
   {
     providers: Layer.mergeAll(
-      Axiom.providers(),
+      Layer.unwrap(
+        Effect.map(telemetryEnabled, (enabled) => (enabled ? Axiom.providers() : Layer.empty)).pipe(
+          Effect.orDie,
+        ),
+      ),
       Cloudflare.providers(),
       Drizzle.providers(),
-      Planetscale.providers(),
+      Layer.unwrap(
+        Effect.map(databaseProvider, (provider) =>
+          provider === "planetscale" ? Planetscale.providers() : Layer.empty,
+        ).pipe(Effect.orDie),
+      ),
     ),
     state: Cloudflare.state(),
   },
   Effect.gen(function* () {
-    const db = yield* RelayDb.PlanetscaleDatabase;
+    const db = yield* RelayDb.ConfiguredDatabase;
     const hyperdrive = yield* RelayDb.RelayHyperdrive;
     const managedEndpointZone = yield* ManagedEndpointZone.pipe(Effect.orDie);
     const relayApiZone = yield* RelayApiZone.pipe(Effect.orDie);
@@ -34,32 +45,37 @@ export default Alchemy.Stack(
     const api = yield* RelayWorker.Api;
     yield* PublishClientConfig({
       url: api.url,
-      mobileTracingUrl: observability.traces.otelTracesEndpoint,
-      mobileTracingDataset: observability.traces.name,
-      mobileTracingToken: observability.mobileIngestToken.token,
-      clientTracingUrl: observability.traces.otelTracesEndpoint,
-      clientTracingDataset: observability.traces.name,
-      clientTracingToken: observability.clientIngestToken.token,
-      tokenDigest: Output.map(
-        Output.all(observability.mobileIngestToken.token, observability.clientIngestToken.token),
-        tokenDigest,
-      ),
+      mobileTracingUrl: observability?.traces.otelTracesEndpoint ?? "",
+      mobileTracingDataset: observability?.traces.name ?? "",
+      mobileTracingToken: observability?.mobileIngestToken.token ?? Redacted.make(""),
+      clientTracingUrl: observability?.traces.otelTracesEndpoint ?? "",
+      clientTracingDataset: observability?.traces.name ?? "",
+      clientTracingToken: observability?.clientIngestToken.token ?? Redacted.make(""),
+      tokenDigest: observability
+        ? Output.map(
+            Output.all(
+              observability.mobileIngestToken.token,
+              observability.clientIngestToken.token,
+            ),
+            tokenDigest,
+          )
+        : tokenDigest([Redacted.make(""), Redacted.make("")]),
     });
 
     return {
-      databaseName: db.database.name,
-      databaseBranchName: db.branch?.name ?? "main",
+      databaseName: db.databaseName,
+      databaseBranchName: db.branchName,
       hyperdriveName: hyperdrive.name,
       workerName: api.workerName,
       url: api.url,
       relayApiZoneId: relayApiZone.zoneId,
       managedEndpointZoneId: managedEndpointZone.zoneId,
-      mobileTracingUrl: observability.traces.otelTracesEndpoint,
-      mobileTracingDataset: observability.traces.name,
-      mobileTracingToken: observability.mobileIngestToken.token,
-      clientTracingUrl: observability.traces.otelTracesEndpoint,
-      clientTracingDataset: observability.traces.name,
-      clientTracingToken: observability.clientIngestToken.token,
+      mobileTracingUrl: observability?.traces.otelTracesEndpoint ?? "",
+      mobileTracingDataset: observability?.traces.name ?? "",
+      mobileTracingToken: observability?.mobileIngestToken.token ?? Redacted.make(""),
+      clientTracingUrl: observability?.traces.otelTracesEndpoint ?? "",
+      clientTracingDataset: observability?.traces.name ?? "",
+      clientTracingToken: observability?.clientIngestToken.token ?? Redacted.make(""),
     };
   }).pipe(Effect.provide(RelayWorker.layer)),
 );
