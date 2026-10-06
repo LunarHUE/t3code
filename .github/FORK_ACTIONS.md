@@ -28,8 +28,8 @@ code and scripts unless a separate change removes those features.
 
 Use the Release workflow's `preview` channel to exercise packaging without
 creating updater feeds. Stable and nightly channels publish updater metadata
-in this fork's GitHub Releases. The build uses `GITHUB_REPOSITORY` as the update
-repository. Signing secrets remain optional; unsigned builds are useful for
+in this fork's GitHub Releases. The desktop job explicitly sets `T3CODE_DESKTOP_UPDATE_REPOSITORY` to
+`github.repository`, keeping both updater channels on `LunarHUE/t3code`. Signing secrets remain optional; unsigned builds are useful for
 validation, while distribution may require platform signing credentials.
 
 Public Connect build configuration comes from the repository variable
@@ -58,3 +58,9 @@ rate-limit, and scheduler adapters. Axiom and mobile push remain disabled there.
 `RELAY_DEPLOY_ENABLED` gates the optional Cloudflare workflow. Leave it unset/false
 for cluster hosting. The [Cloudflare guide](../infra/relay/README.md#deployment)
 remains available if that deployment is needed later.
+
+Use upstream’s `0.0.46-nightly.<UTC date>.<workflow run>` format while testing
+the current development branch. Four-part versions such as `0.0.46.5` are not
+SemVer. Later stable releases can follow upstream’s three-part versions; our
+GitHub release feeds remain independent of upstream. Stable and nightly builds
+must come from the default branch.

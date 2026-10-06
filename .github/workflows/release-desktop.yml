@@ -91,6 +91,7 @@ jobs:
     timeout-minutes: ${{ inputs.platform == 'win' && 90 || 60 }}
     env:
       T3CODE_RELAY_URL: ${{ inputs.relay_url }}
+      T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
     steps:
       # This repository is public, so Git needs no credentials. checkout's
       # credential cleanup runs submodule foreach even with submodules disabled,
