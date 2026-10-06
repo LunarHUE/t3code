@@ -6,7 +6,10 @@ on:
       - main
     paths:
       - "infra/relay/**"
-      - "packages/contracts/**"
+      - "packages/**"
+      - "patches/**"
+      - "package.json"
+      - "pnpm-workspace.yaml"
       - "pnpm-lock.yaml"
       - ".github/workflows/deploy-relay.yml"
   # Alchemy does not redeploy the Worker when only a Config value read in its
