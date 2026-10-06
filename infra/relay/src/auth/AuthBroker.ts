@@ -46,7 +46,7 @@ const baseHeaders = {
   "cache-control": "no-store",
   pragma: "no-cache",
   "x-content-type-options": "nosniff",
-  "referrer-policy": "no-referrer",
+  "referrer-policy": "same-origin",
 };
 const json = (body: unknown, status = 200): Response => ({
   status,
