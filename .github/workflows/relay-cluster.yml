@@ -70,7 +70,7 @@ jobs:
           docker run -d --name relay-postgres --network relay-smoke \
             -e POSTGRES_PASSWORD=relay-test-only -e POSTGRES_DB=t3_relay_test postgres:17-alpine
           for attempt in $(seq 1 30); do
-            if docker exec relay-postgres pg_isready -U postgres; then break; fi
+            if docker exec relay-postgres pg_isready -h 127.0.0.1 -U postgres; then break; fi
             sleep 1
           done
           export RELAY_DATABASE_URL=postgresql://postgres:relay-test-only@relay-postgres:5432/t3_relay_test
@@ -86,7 +86,10 @@ jobs:
             -e RELAY_URL=https://relay.example.test -e CLERK_SECRET_KEY=sk_test_fixture \
             -e CLERK_PUBLISHABLE_KEY=pk_test_dGVzdC5jbGVyay5hY2NvdW50cy5kZXYk \
             "ghcr.io/lunarhue/t3code-relay:sha-$GITHUB_SHA"
-          curl --fail --retry 15 --retry-connrefused --retry-delay 2 http://127.0.0.1:8080/health
+          if ! curl --fail --retry 15 --retry-all-errors --retry-delay 2 http://127.0.0.1:8080/health; then
+            docker logs relay-api
+            exit 1
+          fi
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/v1/environments)" = 401
           docker exec relay-api node infra/relay/src/cluster/main.ts cleanup
       - name: Clean up smoke-test resources
