@@ -1,4 +1,4 @@
-import { useAuth } from "@clerk/react";
+import { useAccountAuth as useAuth } from "@t3tools/client-runtime/account-auth-react";
 import { AuthAdministrativeScopes, AuthRelayWriteScope } from "@t3tools/contracts";
 import { useEffect, useRef, useState } from "react";
 

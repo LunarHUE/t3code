@@ -76,14 +76,62 @@ export const layer = Layer.effect(
     const privateEndpoints = parsePrivateEndpoints(
       yield* Config.String("RELAY_PRIVATE_ENDPOINTS").pipe(Config.withDefault("[]")),
     );
+    const oidcIssuer = new URL(yield* Config.NonEmptyString("OIDC_ISSUER_URL"));
+    if (
+      oidcIssuer.protocol !== "https:" ||
+      oidcIssuer.username ||
+      oidcIssuer.password ||
+      oidcIssuer.search ||
+      oidcIssuer.hash
+    )
+      return yield* Effect.die("OIDC_ISSUER_URL must be an HTTPS issuer URL.");
+    const redirectUri = yield* Config.String("OIDC_REDIRECT_URI").pipe(
+      Config.withDefault(`${issuerUrl.origin}/auth/callback`),
+    );
+    const redirect = new URL(redirectUri);
+    if (
+      redirect.origin !== issuerUrl.origin ||
+      redirect.pathname !== "/auth/callback" ||
+      redirect.username ||
+      redirect.password ||
+      redirect.search ||
+      redirect.hash
+    )
+      return yield* Effect.die("OIDC_REDIRECT_URI must be RELAY_URL/auth/callback.");
+    const scopes = yield* Config.NonEmptyString("OIDC_SCOPES").pipe(
+      Config.withDefault("openid profile email"),
+    );
+    if (!scopes.split(/\s+/u).includes("openid"))
+      return yield* Effect.die("OIDC_SCOPES must include openid.");
+    const refreshLifetimeSeconds = yield* Config.Number("OIDC_REFRESH_LIFETIME_SECONDS").pipe(
+      Config.withDefault(604800),
+    );
+    if (
+      !Number.isInteger(refreshLifetimeSeconds) ||
+      refreshLifetimeSeconds < 600 ||
+      refreshLifetimeSeconds > 2592000
+    )
+      return yield* Effect.die("OIDC_REFRESH_LIFETIME_SECONDS must be between 600 and 2592000.");
+    const clientSecret = yield* Config.Redacted("OIDC_CLIENT_SECRET");
+    if (!Redacted.value(clientSecret).trim())
+      return yield* Effect.die("OIDC_CLIENT_SECRET must not be empty.");
+    const tokenEndpointAuthMethod = yield* Config.Literals(
+      ["client_secret_post", "client_secret_basic"],
+      "OIDC_TOKEN_ENDPOINT_AUTH_METHOD",
+    ).pipe(Config.withDefault("client_secret_post"));
+    const oidc = {
+      issuerUrl: oidcIssuer.href,
+      clientId: yield* Config.NonEmptyString("OIDC_CLIENT_ID"),
+      clientSecret,
+      tokenEndpointAuthMethod,
+      redirectUri,
+      scopes,
+      refreshLifetimeSeconds,
+    };
     return RelayConfiguration.of({
       relayIssuer: issuerUrl.origin,
       privateEndpoints,
-      clerkSecretKey: yield* Config.Redacted("CLERK_SECRET_KEY"),
-      clerkPublishableKey: yield* Config.NonEmptyString("CLERK_PUBLISHABLE_KEY"),
-      clerkJwtAudience: yield* Config.String("CLERK_JWT_AUDIENCE").pipe(
-        Config.withDefault("t3-code-relay"),
-      ),
+      oidc,
       cloudMintPrivateKey,
       cloudMintPublicKey: NodeCrypto.createPublicKey(key)
         .export({ type: "spki", format: "pem" })

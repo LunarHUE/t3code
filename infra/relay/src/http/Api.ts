@@ -1,4 +1,5 @@
 import { createClerkClient, verifyToken } from "@clerk/backend";
+import { verifyAccountToken } from "../auth/AccountTokens.ts";
 import { sql as drizzleSql } from "drizzle-orm";
 import * as Crypto from "effect/Crypto";
 import * as Context from "effect/Context";
@@ -1024,7 +1025,9 @@ export const layerTokenApi = HttpApiBuilder.group(
           scope: args.payload.scope,
         });
         yield* Effect.annotateCurrentSpan({
-          "relay.auth.mode": "clerk_bearer_token_exchange",
+          "relay.auth.mode": config.oidc
+            ? "account_bearer_token_exchange"
+            : "clerk_bearer_token_exchange",
           "relay.oauth.client_id": args.payload.client_id,
           "relay.oauth.scopes": args.payload.scope,
         });
@@ -1032,10 +1035,10 @@ export const layerTokenApi = HttpApiBuilder.group(
           return yield* new HttpApiError.Unauthorized({});
         }
 
-        const verified = yield* verifyClerkBearerToken(config, args.payload.subject_token).pipe(
+        const verified = yield* verifyExchangeSubject(config, args.payload.subject_token).pipe(
           Effect.catch(() => relayAuthInvalidError("invalid_bearer")),
         );
-        if (!verified.sub || !hasExpectedClerkAudience(verified.aud, config.clerkJwtAudience)) {
+        if (!verified.sub) {
           return yield* relayAuthInvalidError("invalid_bearer");
         }
         const proofKeyThumbprint = yield* requireDpopProof().pipe(
@@ -1657,7 +1660,7 @@ function verifyClerkBearerToken(
   return Effect.tryPromise({
     try: () =>
       verifyToken(token, {
-        secretKey: Redacted.value(config.clerkSecretKey),
+        secretKey: Redacted.value(config.clerkSecretKey!),
         audience: config.clerkJwtAudience,
       }),
     catch: (cause) => new ClerkTokenVerificationFailed({ cause }),
@@ -1675,8 +1678,8 @@ function verifyClerkOAuthBearerToken(
   return Effect.tryPromise({
     try: async () => {
       const client = createClerkClient({
-        secretKey: Redacted.value(config.clerkSecretKey),
-        publishableKey: config.clerkPublishableKey,
+        secretKey: Redacted.value(config.clerkSecretKey!),
+        publishableKey: config.clerkPublishableKey!,
       });
       const state = await client.authenticateRequest(
         new Request(config.relayIssuer, {
@@ -1694,13 +1697,44 @@ function verifyClerkOAuthBearerToken(
   });
 }
 
+function verifyExchangeSubject(
+  config: RelayConfiguration.RelayConfiguration["Service"],
+  token: string,
+): Effect.Effect<{ sub: string }, ClerkTokenVerificationFailed> {
+  if (config.oidc) return verifyRelayClientBearerToken(config, token);
+  if (!config.clerkSecretKey || !config.clerkJwtAudience)
+    return Effect.fail(new ClerkTokenVerificationFailed({ cause: "missing_auth_configuration" }));
+  return verifyClerkBearerToken(config, token).pipe(
+    Effect.flatMap((verified) =>
+      verified.sub && hasExpectedClerkAudience(verified.aud, config.clerkJwtAudience ?? "")
+        ? Effect.succeed({ sub: verified.sub })
+        : Effect.fail(new ClerkTokenVerificationFailed({ cause: "missing_relay_audience" })),
+    ),
+  );
+}
+
 export function verifyRelayClientBearerToken(
   config: RelayConfiguration.RelayConfiguration["Service"],
   token: string,
-) {
+): Effect.Effect<
+  { sub: string; mode: "account_bearer" | "clerk_session_bearer" | "clerk_oauth_bearer" },
+  ClerkTokenVerificationFailed
+> {
+  if (config.oidc)
+    return Effect.gen(function* () {
+      const now = yield* DateTime.now;
+      const user = yield* verifyAccountToken(
+        config,
+        token,
+        Math.floor(now.epochMilliseconds / 1_000),
+      ).pipe(Effect.mapError((cause) => new ClerkTokenVerificationFailed({ cause })));
+      return { sub: user.id, mode: "account_bearer" as const };
+    });
+  if (!config.clerkSecretKey || !config.clerkJwtAudience)
+    return Effect.fail(new ClerkTokenVerificationFailed({ cause: "missing_auth_configuration" }));
   return verifyClerkBearerToken(config, token).pipe(
     Effect.flatMap((verified) =>
-      verified.sub && hasExpectedClerkAudience(verified.aud, config.clerkJwtAudience)
+      verified.sub && hasExpectedClerkAudience(verified.aud, config.clerkJwtAudience ?? "")
         ? Effect.succeed({ sub: verified.sub, mode: "clerk_session_bearer" as const })
         : Effect.fail(new ClerkTokenVerificationFailed({ cause: "missing_relay_audience" })),
     ),

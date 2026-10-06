@@ -67,11 +67,20 @@ export class RelayConfiguration extends Context.Service<
       readonly httpBaseUrl: string;
       readonly wsBaseUrl: string;
     }>;
+    readonly oidc?: {
+      readonly issuerUrl: string;
+      readonly clientId: string;
+      readonly clientSecret: Redacted.Redacted<string>;
+      readonly tokenEndpointAuthMethod?: "client_secret_post" | "client_secret_basic";
+      readonly redirectUri: string;
+      readonly scopes: string;
+      readonly refreshLifetimeSeconds: number;
+    };
     readonly apns: ApnsCredentials | null;
     readonly fcmServiceAccount?: Redacted.Redacted<string>;
-    readonly clerkSecretKey: Redacted.Redacted<string>;
-    readonly clerkPublishableKey: string;
-    readonly clerkJwtAudience: string;
+    readonly clerkSecretKey?: Redacted.Redacted<string>;
+    readonly clerkPublishableKey?: string;
+    readonly clerkJwtAudience?: string;
     readonly apnsDeliveryJobSigningSecret: Redacted.Redacted<string>;
     readonly cloudMintPrivateKey: Redacted.Redacted<string>;
     readonly cloudMintPublicKey: string;

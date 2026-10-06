@@ -50,7 +50,7 @@ jobs:
         env:
           RELAY_MIGRATION_DATABASE_URL: postgresql://postgres:relay-test-only@localhost:5432/t3_relay_test
       - name: Test cluster adapters
-        run: vp test run infra/relay/src/cluster
+        run: vp test run infra/relay/src/cluster infra/relay/src/auth
         env:
           RELAY_CLUSTER_TEST_DATABASE_URL: postgresql://postgres:relay-test-only@localhost:5432/t3_relay_test
   image:
@@ -83,14 +83,34 @@ jobs:
           export RELAY_SIGNING_PRIVATE_KEY="$(cat "$RUNNER_TEMP/relay-smoke.pem")"
           docker run -d --name relay-api --read-only --tmpfs /tmp --network relay-smoke \
             -p 127.0.0.1:8080:8080 -e RELAY_DATABASE_URL -e RELAY_SIGNING_PRIVATE_KEY \
-            -e RELAY_URL=https://relay.example.test -e CLERK_SECRET_KEY=sk_test_fixture \
-            -e CLERK_PUBLISHABLE_KEY=pk_test_dGVzdC5jbGVyay5hY2NvdW50cy5kZXYk \
+            -e RELAY_URL=https://relay.example.test -e OIDC_ISSUER_URL=https://issuer.example.test \
+            -e OIDC_CLIENT_ID=fixture-client -e OIDC_CLIENT_SECRET=fixture-secret \
             "ghcr.io/lunarhue/t3code-relay:sha-$GITHUB_SHA"
           if ! curl --fail --retry 15 --retry-all-errors --retry-delay 2 http://127.0.0.1:8080/health; then
             docker logs relay-api
             exit 1
           fi
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/v1/environments)" = 401
+          docker exec -i relay-api node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          const post = (path, fields) => fetch(`http://127.0.0.1:8080${path}`, {
+            method: 'POST', headers: {'content-type': 'application/x-www-form-urlencoded'},
+            body: new URLSearchParams(fields),
+          });
+          const response = await post('/auth/device', {client_id: 't3-cli'});
+          assert.equal(response.status, 200);
+          const device = await response.json();
+          assert.equal(device.verification_uri, 'https://relay.example.test/auth/device');
+          const pending = await post('/auth/token', {
+            client_id: 't3-cli', grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+            device_code: device.device_code,
+          });
+          assert.equal(pending.status, 400);
+          assert.equal((await pending.json()).error, 'authorization_pending');
+          const approval = await post('/auth/device', {user_code: device.user_code, decision: 'approve'});
+          assert.equal(approval.status, 403);
+          assert.equal((await fetch('http://127.0.0.1:8080/auth/me')).status, 401);
+          JS
           docker exec relay-api node infra/relay/src/cluster/main.ts cleanup
       - name: Clean up smoke-test resources
         if: always()

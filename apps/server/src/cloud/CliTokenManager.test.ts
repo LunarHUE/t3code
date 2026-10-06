@@ -1,27 +1,23 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
-import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Queue from "effect/Queue";
+import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import * as ExternalLauncher from "../process/externalLauncher.ts";
 import * as Schema from "effect/Schema";
-import * as Terminal from "effect/Terminal";
 import * as TestClock from "effect/testing/TestClock";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 
 import * as CliTokenManager from "./CliTokenManager.ts";
 
-// pk_test_<base64 of "clerk.example.test$">
 const TEST_ENV = {
-  T3CODE_CLERK_PUBLISHABLE_KEY: "pk_test_Y2xlcmsuZXhhbXBsZS50ZXN0JA==",
-  T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: "oauth_client_test",
-  T3CODE_HOSTED_APP_URL: "https://hosted.example.test",
+  T3CODE_RELAY_URL: "https://relay.example.test",
 };
 
 interface RecordedTokenRequest {
@@ -51,64 +47,15 @@ const TestTokenResponseJson = Schema.fromJsonString(
   }),
 );
 const encodeTestTokenResponse = Schema.encodeSync(TestTokenResponseJson);
+const decodeSavedCredential = Schema.decodeEffect(
+  Schema.fromJsonString(Schema.Struct({ refreshToken: Schema.String, relayUrl: Schema.String })),
+);
 
 const provideTestEnv = Effect.provide(
   ConfigProvider.layer(ConfigProvider.fromEnv({ env: TEST_ENV })),
 );
 
 const isAuthorizationError = Schema.is(CliTokenManager.CloudCliAuthorizationError);
-
-const makeTestTerminal = (queue: Queue.Queue<Terminal.UserInput>) =>
-  Terminal.make({
-    columns: Effect.succeed(80),
-    rows: Effect.succeed(24),
-    readInput: Effect.succeed(Queue.asDequeue(queue)),
-    readLine: Effect.never,
-    display: () => Effect.void,
-  });
-
-const userInput = (name: string): Terminal.UserInput => ({
-  input: Option.some(name),
-  key: { name, ctrl: false, meta: false, shift: name !== name.toLowerCase() },
-});
-
-it.effect("opens the browser on Enter and switches the active flow on H", () =>
-  Effect.gen(function* () {
-    const queue = yield* Queue.make<Terminal.UserInput>();
-    yield* Queue.offerAll(queue, [userInput("enter"), userInput("H")]);
-    const opened: Array<string> = [];
-
-    const result = yield* CliTokenManager.waitForLoopbackAuthorization({
-      authorizationUrl: "https://clerk.example.test/authorize",
-      callback: Effect.never,
-      terminal: makeTestTerminal(queue),
-      launchBrowser: (url) =>
-        Effect.sync(() => {
-          opened.push(url);
-        }),
-    });
-
-    assert.deepEqual(opened, ["https://clerk.example.test/authorize"]);
-    assert.deepEqual(result, { _tag: "HeadlessRequested" });
-  }),
-);
-
-it.effect("finishes normally when the browser callback wins", () =>
-  Effect.gen(function* () {
-    const queue = yield* Queue.make<Terminal.UserInput>();
-    const callback = yield* Deferred.make<string>();
-    yield* Deferred.succeed(callback, "clerk-code-123");
-
-    const result = yield* CliTokenManager.waitForLoopbackAuthorization({
-      authorizationUrl: "https://clerk.example.test/authorize",
-      callback: Deferred.await(callback),
-      terminal: makeTestTerminal(queue),
-      launchBrowser: () => Effect.die("browser launch should not run"),
-    });
-
-    assert.deepEqual(result, { _tag: "AuthorizationCode", code: "clerk-code-123" });
-  }),
-);
 
 interface DeviceFlowServer {
   readonly requests: Array<RecordedTokenRequest>;
@@ -119,8 +66,8 @@ interface DeviceFlowServer {
 const DEVICE_AUTHORIZATION_BODY = JSON.stringify({
   device_code: "device-code-1",
   user_code: "BCDF-GHJK",
-  verification_uri: "https://accounts.example.test/device",
-  verification_uri_complete: "https://accounts.example.test/device?user_code=BCDF-GHJK",
+  verification_uri: "https://relay.example.test/auth/device",
+  verification_uri_complete: "https://relay.example.test/auth/device?user_code=BCDF-GHJK",
   expires_in: 600,
   interval: 5,
 });
@@ -145,7 +92,7 @@ const layerDeviceFlow = (server: DeviceFlowServer) =>
         const body =
           request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "";
         server.requests.push({ url: request.url, params: new URLSearchParams(body) });
-        const reply = request.url.endsWith("/oauth/device_authorization")
+        const reply = request.url.endsWith("/auth/device")
           ? { status: 200, body: DEVICE_AUTHORIZATION_BODY }
           : ((server.tokenReplies.length > 1
               ? server.tokenReplies.shift()
@@ -162,10 +109,10 @@ const layerDeviceFlow = (server: DeviceFlowServer) =>
   );
 
 const tokenRequests = (requests: ReadonlyArray<RecordedTokenRequest>) =>
-  requests.filter((request) => request.url.endsWith("/oauth/token"));
+  requests.filter((request) => request.url.endsWith("/auth/token"));
 
 it.layer(NodeServices.layer)("CliTokenManager.deviceAuthorizationLogin", (it) => {
-  it.effect("requests a device code, shows it, and polls until Clerk grants the token", () =>
+  it.effect("requests a device code, shows it, and polls until the relay grants the token", () =>
     Effect.gen(function* () {
       const server: DeviceFlowServer = {
         requests: [],
@@ -184,8 +131,8 @@ it.layer(NodeServices.layer)("CliTokenManager.deviceAuthorizationLogin", (it) =>
 
       assert.deepEqual(prompts, [
         {
-          verificationUri: "https://accounts.example.test/device",
-          verificationUriComplete: "https://accounts.example.test/device?user_code=BCDF-GHJK",
+          verificationUri: "https://relay.example.test/auth/device",
+          verificationUriComplete: "https://relay.example.test/auth/device?user_code=BCDF-GHJK",
           userCode: "BCDF-GHJK",
           expiresIn: Duration.seconds(600),
         },
@@ -196,17 +143,17 @@ it.layer(NodeServices.layer)("CliTokenManager.deviceAuthorizationLogin", (it) =>
       assert.equal(identity, "theo@example.test");
 
       const authorization = server.requests[0]!;
-      assert.equal(authorization.url, "https://clerk.example.test/oauth/device_authorization");
-      assert.equal(authorization.params.get("client_id"), "oauth_client_test");
-      assert.equal(authorization.params.get("scope"), "openid profile email offline_access");
+      assert.equal(authorization.url, "https://relay.example.test/auth/device");
+      assert.equal(authorization.params.get("client_id"), "t3-cli");
+      assert.equal(authorization.params.get("scope"), "account");
 
       const polls = tokenRequests(server.requests);
       assert.lengthOf(polls, 2);
       for (const poll of polls) {
-        assert.equal(poll.url, "https://clerk.example.test/oauth/token");
+        assert.equal(poll.url, "https://relay.example.test/auth/token");
         assert.equal(poll.params.get("grant_type"), "urn:ietf:params:oauth:grant-type:device_code");
         assert.equal(poll.params.get("device_code"), "device-code-1");
-        assert.equal(poll.params.get("client_id"), "oauth_client_test");
+        assert.equal(poll.params.get("client_id"), "t3-cli");
       }
     }),
   );
@@ -321,5 +268,83 @@ it.layer(NodeServices.layer)("CliTokenManager.deviceAuthorizationLogin", (it) =>
 
       assert.isTrue(isAuthorizationError(result));
     }),
+  );
+});
+
+it.effect(
+  "CLI refresh rotates once across concurrent readers and logout clears after failed revoke",
+  () => {
+    let stored: Uint8Array | null = new TextEncoder().encode(
+      JSON.stringify({
+        accessToken: "old",
+        refreshToken: "old-refresh",
+        expiresAtEpochMs: 0,
+        relayUrl: TEST_ENV.T3CODE_RELAY_URL,
+      }),
+    );
+    const server: DeviceFlowServer = { requests: [], tokenReplies: [tokenGranted] };
+    const secrets = {
+      get: () => Effect.sync(() => Option.fromNullishOr(stored)),
+      set: (_name: string, value: Uint8Array) =>
+        Effect.sync(() => {
+          stored = value;
+        }),
+      remove: () =>
+        Effect.sync(() => {
+          stored = null;
+        }),
+    } as unknown as ServerSecretStore.ServerSecretStore["Service"];
+    const launcher = {
+      launchBrowser: () => Effect.void,
+    } as unknown as ExternalLauncher.ExternalLauncher["Service"];
+    return Effect.gen(function* () {
+      const manager = yield* CliTokenManager.CloudCliTokenManager;
+      const tokens = yield* Effect.all([manager.getExisting, manager.getExisting], {
+        concurrency: "unbounded",
+      });
+      assert.isTrue(tokens.every(Option.isSome));
+      assert.lengthOf(tokenRequests(server.requests), 1);
+      const saved = yield* decodeSavedCredential(new TextDecoder().decode(stored!));
+      assert.equal(saved.refreshToken, "refresh-token-1");
+      assert.equal(saved.relayUrl, TEST_ENV.T3CODE_RELAY_URL);
+      server.tokenReplies.splice(0, server.tokenReplies.length, oauthError("invalid_grant"));
+      yield* manager.clear;
+      assert.isNull(stored);
+      const revoked = server.requests.find((request) => request.url.endsWith("/auth/revoke"));
+      assert.equal(revoked?.params.get("token"), "refresh-token-1");
+    }).pipe(
+      Effect.provide(CliTokenManager.layer.pipe(Layer.provide(layerDeviceFlow(server)))),
+      Effect.provideService(ServerSecretStore.ServerSecretStore, secrets),
+      Effect.provideService(ExternalLauncher.ExternalLauncher, launcher),
+      provideTestEnv,
+    );
+  },
+);
+
+it.effect("CLI does not send a stored credential to a different relay", () => {
+  const raw = new TextEncoder().encode(
+    JSON.stringify({
+      accessToken: "old",
+      refreshToken: "old-refresh",
+      expiresAtEpochMs: 0,
+      relayUrl: "https://other.example.test",
+    }),
+  );
+  const server: DeviceFlowServer = { requests: [], tokenReplies: [tokenGranted] };
+  const secrets = {
+    get: () => Effect.succeed(Option.some(raw)),
+  } as unknown as ServerSecretStore.ServerSecretStore["Service"];
+  const launcher = {
+    launchBrowser: () => Effect.void,
+  } as unknown as ExternalLauncher.ExternalLauncher["Service"];
+  return Effect.gen(function* () {
+    const manager = yield* CliTokenManager.CloudCliTokenManager;
+    assert.isTrue(Option.isNone(yield* manager.getExisting));
+    assert.lengthOf(server.requests, 0);
+  }).pipe(
+    Effect.provide(CliTokenManager.layer.pipe(Layer.provide(layerDeviceFlow(server)))),
+    Effect.provideService(ServerSecretStore.ServerSecretStore, secrets),
+    Effect.provideService(ExternalLauncher.ExternalLauncher, launcher),
+    provideTestEnv,
   );
 });

@@ -273,7 +273,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
         setLiveActivityUpdatesEnabled({
           enabled: true,
           previousEnabled: liveActivitiesPreferenceEnabled,
-          clerkToken: tokenResult.value,
+          accountToken: tokenResult.value,
           connections,
         }),
       ),
@@ -372,7 +372,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
                 setLiveActivityUpdatesEnabled({
                   enabled: false,
                   previousEnabled: liveActivitiesPreferenceEnabled,
-                  clerkToken: token,
+                  accountToken: token,
                   connections,
                 }),
               ),

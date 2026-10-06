@@ -64,12 +64,7 @@ To run a smaller test set while iterating:
 vp test run src/environments/EnvironmentLinker.test.ts
 ```
 
-Before considering a change complete, run the repository-wide checks from the root:
-
-```sh
-vp check
-vp run typecheck
-```
+Use focused tests, lint and workspace typechecks for changed code. CI owns the full suite.
 
 Backend changes should include tests. Prefer testing the real business logic with external
 dependencies represented at their boundary rather than mocking internal behavior.
@@ -90,6 +85,92 @@ These tests delete fixture rows. Never use a production database.
 Set `T3CODE_RELAY_PRIVATE_NETWORK=true` on environment hosts when using the fork's
 CLI, so `t3 connect` skips installing cloudflared. The normal link flow is retained;
 the relay advertises only administrator-configured private HTTPS endpoints.
+
+### Cluster authentication
+
+The cluster runtime uses a single OIDC provider through an auth service hosted
+at the relay origin. It does not require Clerk credentials. Configure these
+runtime variables, with secrets supplied through Kubernetes Secrets:
+
+```dotenv
+RELAY_URL=https://t3connect.lunarhue.com
+OIDC_ISSUER_URL=https://login.microsoftonline.com/<tenant-id>/v2.0
+OIDC_CLIENT_ID=<application-id>
+OIDC_CLIENT_SECRET=<secret-value>
+OIDC_REDIRECT_URI=https://t3connect.lunarhue.com/auth/callback
+OIDC_SCOPES="openid profile email"
+```
+
+Register the callback as a Web redirect in your single-tenant Entra application.
+The callback defaults to `RELAY_URL/auth/callback`. The relay keeps the client
+secret server-side; client builds require only `T3CODE_RELAY_URL`.
+
+Entra registration settings:
+
+| Setting                            | Value                                                |
+| ---------------------------------- | ---------------------------------------------------- |
+| Supported accounts                 | Accounts in this organizational directory only       |
+| Platform                           | Web                                                  |
+| Redirect URI                       | `https://t3connect.lunarhue.com/auth/callback`       |
+| Implicit access tokens / ID tokens | Both disabled                                        |
+| Allow public client flows          | No                                                   |
+| Front-channel logout URL           | Unset; Entra front-channel logout is not implemented |
+| Client credential                  | Client secret value from Certificates & secrets      |
+| Requested scopes                   | `openid profile email`                               |
+| Expose an API / custom scopes      | Not needed                                           |
+| Extra token claims                 | Not needed                                           |
+
+In API permissions, the sign-in permissions are Microsoft Graph **delegated**
+permissions `openid`, `profile`, and `email`. Grant admin consent if your tenant
+requires it. `User.Read` and `offline_access` are not needed by this broker.
+No Graph application permissions or Graph API calls are required. Tenant consent
+policy may require administrator approval of sign-in permissions. Optionally set
+Assignment required on the Enterprise Application and assign permitted coworkers.
+See [Microsoft's Web redirect setup](https://learn.microsoft.com/en-us/entra/identity-platform/how-to-add-redirect-uri)
+and [authorization-code flow](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow).
+
+For other providers, `OIDC_TOKEN_ENDPOINT_AUTH_METHOD` accepts
+`client_secret_post` (the default used with Entra) or `client_secret_basic`.
+
+The OIDC library discovers Entra endpoints through
+`https://login.microsoftonline.com/<tenant-id>/v2.0/.well-known/openid-configuration`.
+Only the callback URL belongs in Entra's redirect list. Our routes are:
+
+| Route                                           | Purpose                                                 |
+| ----------------------------------------------- | ------------------------------------------------------- |
+| `GET /auth/login`                               | Start OIDC sign-in                                      |
+| `GET /auth/callback`                            | Receive and validate the provider response              |
+| `POST /auth/device` with `client_id`            | Issue a pending device authorization                    |
+| `GET /auth/device`                              | Show the code entry / approval page                     |
+| `POST /auth/device` with session and CSRF token | Approve or deny a device                                |
+| `POST /auth/token`                              | Redeem an approved device or rotate refresh credentials |
+| `POST /auth/revoke`                             | Revoke a client's refresh family                        |
+| `POST /auth/logout`                             | End the browser approval session, with CSRF protection  |
+| `GET /auth/me`                                  | Read the current account using an account bearer token  |
+
+Clients open the relay's device approval page and display a code. Sign in with
+the configured provider, confirm that code, and approve the device. The approval
+page displays the internal account ID used in `RELAY_PRIVATE_ENDPOINTS`.
+Environment credentials remain separate from account sessions and must stay in
+the environment's persistent T3 home.
+
+Account access tokens expire after ten minutes. Refresh credentials rotate and
+expire after seven days by default; `OIDC_REFRESH_LIFETIME_SECONDS` accepts 600
+through 2592000 seconds. Logout revokes the refresh family. Already-issued
+account and DPoP tokens can remain valid until expiry, and disabling an Entra
+account does not immediately revoke local sessions. Browser approval sessions
+also expire and offer a sign-out action.
+
+Web clients keep credentials for the current tab in session storage. Desktop
+uses the OS keyring through Electron safeStorage and refuses plaintext fallback.
+Changing the OIDC issuer/client registration changes
+the account identity boundary. There is no Clerk account migration in this fresh
+deployment.
+
+The `migrate-cluster` command creates the cluster-owned authentication tables
+without needing identity credentials. Cleanup prunes expired grants and sessions.
+Focused integration tests use a disposable PostgreSQL database and mocked OIDC
+responses, never a live Entra account.
 
 ## Deployment
 

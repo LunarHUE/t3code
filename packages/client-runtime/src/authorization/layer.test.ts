@@ -109,7 +109,7 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
   readonly bootstrap?: RelayEnvironmentConnectResponse;
   readonly beforeBootstrap?: Effect.Effect<void, ManagedRelay.ManagedRelayClientError>;
   readonly beforePut?: Effect.Effect<void>;
-  readonly clerkToken?: ClientCapabilities.CloudSession["Service"]["clerkToken"];
+  readonly accountToken?: ClientCapabilities.CloudSession["Service"]["accountToken"];
 }) {
   const tokens = yield* Ref.make(
     new Map(
@@ -196,7 +196,7 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
         Layer.succeed(ManagedRelay.ManagedRelayClient, relay),
         Layer.succeed(ClientCapabilities.CloudSession, {
           identity: Ref.get(session),
-          clerkToken: input.clerkToken ?? Effect.succeed("clerk-session"),
+          accountToken: input.accountToken ?? Effect.succeed("clerk-session"),
         }),
         Layer.succeed(ClientCapabilities.RelayDeviceIdentity, {
           deviceId: Effect.succeedSome("device-1"),
@@ -659,7 +659,7 @@ describe("RemoteEnvironmentAuthorization", () => {
         expect(yield* Ref.get(harness.relayInputs)).toEqual([
           {
             environmentId: ENVIRONMENT_ID,
-            clerkToken: "clerk-session",
+            accountToken: "clerk-session",
             scopes: [RelayEnvironmentConnectScope],
             deviceId: "device-1",
           },
@@ -1015,7 +1015,7 @@ describe("RemoteEnvironmentAuthorization", () => {
       const started = yield* Deferred.make<void>();
       const reads = yield* Ref.make(0);
       const harness = yield* makeHarness({
-        clerkToken: Effect.gen(function* () {
+        accountToken: Effect.gen(function* () {
           const read = yield* Ref.updateAndGet(reads, (value) => value + 1);
           if (read === 1) {
             yield* Deferred.succeed(started, undefined);

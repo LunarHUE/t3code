@@ -282,7 +282,7 @@ describe("web cloud link environment client", () => {
       yield* withServices(
         linkPrimaryEnvironmentToCloud({
           target: TARGET,
-          clerkToken: "clerk-token",
+          accountToken: "account-token",
         }),
       );
 
@@ -336,7 +336,7 @@ describe("web cloud link environment client", () => {
       yield* withServices(
         linkPrimaryEnvironmentToCloud({
           target: TARGET,
-          clerkToken: "clerk-token",
+          accountToken: "account-token",
           mode: "publish_only",
         }),
       );
@@ -359,7 +359,7 @@ describe("web cloud link environment client", () => {
       yield* withServices(
         linkPrimaryEnvironmentToCloud({
           target: TARGET,
-          clerkToken: "clerk-token",
+          accountToken: "account-token",
         }),
         {
           status: { status: "available", version: "2026.6.0" },
@@ -384,7 +384,7 @@ describe("web cloud link environment client", () => {
       yield* withServices(
         unlinkPrimaryEnvironmentFromCloud({
           target: TARGET,
-          clerkToken: "clerk-token",
+          accountToken: "account-token",
         }),
       );
 

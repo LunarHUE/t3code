@@ -146,7 +146,7 @@ function ensureLinkedEnvironmentMatches(input: {
 
 interface LinkEnvironmentToCloudInput {
   readonly connection: SavedRemoteConnection;
-  readonly clerkToken: string;
+  readonly accountToken: string;
 }
 
 type LinkEnvironmentToCloudRequirements =
@@ -173,7 +173,7 @@ export function linkEnvironmentToCloudWithPreference(
     const liveActivitiesEnabled = input.liveActivitiesEnabled;
     const challenge = yield* relayClient
       .createEnvironmentLinkChallenge({
-        clerkToken: input.clerkToken,
+        accountToken: input.accountToken,
         payload: {
           notificationsEnabled: true,
           liveActivitiesEnabled,
@@ -203,7 +203,7 @@ export function linkEnvironmentToCloudWithPreference(
       .pipe(Effect.mapError(cloudEnvironmentLinkError("Could not obtain environment link proof.")));
     const link = yield* relayClient
       .linkEnvironment({
-        clerkToken: input.clerkToken,
+        accountToken: input.accountToken,
         payload: {
           deviceId,
           proof,

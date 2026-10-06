@@ -1122,6 +1122,9 @@ export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access"]);
 export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
 
 export interface DesktopBridge {
+  /** Credentials encrypted by the OS keyring, isolated by relay origin. */
+  readAccountCredential?: (relayUrl: string) => Promise<string | null>;
+  writeAccountCredential?: (relayUrl: string, value: string | null) => Promise<void>;
   getAppBranding: () => DesktopAppBranding | null;
   /** Absolute path of a dropped or picked file; absent on desktop builds predating it. */
   getPathForFile?: (file: File) => string;

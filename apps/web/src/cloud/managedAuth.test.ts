@@ -8,8 +8,8 @@ import {
   deactivateManagedRelayAuthentication,
 } from "./managedAuth";
 
-vi.mock("@clerk/react", () => ({
-  useAuth: vi.fn(),
+vi.mock("@t3tools/client-runtime/account-auth-react", () => ({
+  useAccountAuth: vi.fn(),
 }));
 
 vi.mock("../lib/runtime", () => ({
@@ -33,7 +33,7 @@ describe("managed relay authentication", () => {
     activateManagedRelayAuthentication("account-1", async () => "account-1-token");
     expect(appAtomRegistry.get(managedRelaySessionAtom)?.accountId).toBe("account-1");
     const token = await Effect.fromNullishOr(appAtomRegistry.get(managedRelaySessionAtom)).pipe(
-      Effect.flatMap((session) => session.readClerkToken()),
+      Effect.flatMap((session) => session.readAccountToken()),
       Effect.runPromise,
     );
     expect(token).toBe("account-1-token");
@@ -48,7 +48,7 @@ describe("managed relay authentication", () => {
   it("replaces an existing account session atomically", () => {
     setManagedRelaySession(appAtomRegistry, {
       accountId: "account-1",
-      readClerkToken: async () => "account-1-token",
+      readAccountToken: async () => "account-1-token",
     });
 
     activateManagedRelayAuthentication("account-2", async () => "account-2-token");

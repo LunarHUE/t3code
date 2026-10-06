@@ -234,7 +234,7 @@ const layerCapabilities = Layer.effectContext(
       identity: Effect.sync(() =>
         Option.fromNullishOr(appAtomRegistry.get(managedRelaySessionAtom)),
       ),
-      clerkToken: Effect.gen(function* () {
+      accountToken: Effect.gen(function* () {
         const session = appAtomRegistry.get(managedRelaySessionAtom);
         if (session === null) {
           return yield* new ConnectionBlockedError({
@@ -242,7 +242,7 @@ const layerCapabilities = Layer.effectContext(
             detail: "Sign in to T3 Connect to connect this environment.",
           });
         }
-        const token = yield* session.readClerkToken().pipe(
+        const token = yield* session.readAccountToken().pipe(
           Effect.mapError(
             (error) =>
               new ConnectionTransientError({

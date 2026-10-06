@@ -32,11 +32,12 @@ in this fork's GitHub Releases. The build uses `GITHUB_REPOSITORY` as the update
 repository. Signing secrets remain optional; unsigned builds are useful for
 validation, while distribution may require platform signing credentials.
 
-Public Connect build configuration comes from repository variables:
-`T3CODE_RELAY_URL`, `CLERK_PUBLISHABLE_KEY`, `CLERK_JWT_TEMPLATE`, and
-`CLERK_CLI_OAUTH_CLIENT_ID`. Configure these before distributing builds meant to
-use our relay. Empty values do not configure a custom Connect service. Desktop
-builds no longer fetch upstream production state or client tracing credentials.
+Public Connect build configuration comes from the repository variable
+`T3CODE_RELAY_URL`. Set it to `https://t3connect.lunarhue.com` before distributing
+builds for our deployment. OIDC issuer/client settings and the client secret are
+relay runtime configuration, never client build inputs. Desktop builds do not
+fetch upstream production state or client tracing credentials. Mobile builds
+and OIDC mobile integration are outside this fork's deployment scope.
 
 Manual stable releases can specify a version to bootstrap the fork. With no
 version, the workflow promotes the latest nightly's commit and version.
@@ -47,7 +48,8 @@ Releases publish only after the quality and test jobs pass.
 Our primary deployment is the standalone Node relay and PostgreSQL on Kubernetes.
 The HCL root lives in [Infrastructure-Tofu/t3connect](https://github.com/LunarHUE/Infrastructure-Tofu/tree/master/t3connect).
 The image workflow builds from `infra/relay/Dockerfile`. It does not apply cluster
-changes from GitHub-hosted runners; apply OpenTofu from a machine on the VPN.
+changes from GitHub-hosted runners; the infrastructure repository's push-driven
+deployment process applies OpenTofu with its own cluster access.
 
 Preserve the upstream Cloudflare entrypoint and optional provider implementations
 when merging. The cluster runtime supplies private endpoint, PostgreSQL inbox,

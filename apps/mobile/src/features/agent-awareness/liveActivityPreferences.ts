@@ -8,7 +8,7 @@ export const setLiveActivityUpdatesEnabled = Effect.fn("setLiveActivityUpdatesEn
   function* (input: {
     readonly enabled: boolean;
     readonly previousEnabled: boolean;
-    readonly clerkToken: string | null;
+    readonly accountToken: string | null;
     readonly connections: ReadonlyArray<SavedRemoteConnection>;
   }) {
     const linkedConnections = input.connections.filter(
@@ -20,14 +20,14 @@ export const setLiveActivityUpdatesEnabled = Effect.fn("setLiveActivityUpdatesEn
         liveActivitiesEnabled: enabled,
       });
 
-      const clerkToken = input.clerkToken;
-      if (!clerkToken) return;
+      const accountToken = input.accountToken;
+      if (!accountToken) return;
 
       yield* Effect.forEach(
         linkedConnections,
         (connection) =>
           linkEnvironmentToCloudWithPreference({
-            clerkToken,
+            accountToken,
             connection,
             liveActivitiesEnabled: enabled,
           }),
@@ -44,14 +44,14 @@ export const setLiveActivityUpdatesEnabled = Effect.fn("setLiveActivityUpdatesEn
         ),
       );
 
-      const clerkToken = input.clerkToken;
-      if (!clerkToken) return;
+      const accountToken = input.accountToken;
+      if (!accountToken) return;
 
       yield* Effect.forEach(
         linkedConnections,
         (connection) =>
           linkEnvironmentToCloudWithPreference({
-            clerkToken,
+            accountToken,
             connection,
             liveActivitiesEnabled: input.previousEnabled,
           }).pipe(

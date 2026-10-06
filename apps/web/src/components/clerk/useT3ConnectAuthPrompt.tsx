@@ -1,12 +1,10 @@
-import { useClerk } from "@clerk/react";
-
-import { isElectron } from "../../env";
-import { resolveClerkSignInProps } from "./authRedirect";
-
+import { useAccountAuth } from "@t3tools/client-runtime/account-auth-react";
 export function useT3ConnectAuthPrompt() {
-  const clerk = useClerk();
-  const openAuthPrompt = () => {
-    clerk.openSignIn(resolveClerkSignInProps(window.location.href, isElectron));
+  const { signIn } = useAccountAuth();
+  return {
+    authPrompt: null,
+    openAuthPrompt: () => {
+      void signIn();
+    },
   };
-  return { authPrompt: null, openAuthPrompt };
 }

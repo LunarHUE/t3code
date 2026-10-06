@@ -425,7 +425,7 @@ function registerDeviceWithRelay(
       expectedGeneration,
     });
     yield* client.registerDevice({
-      clerkToken: token,
+      accountToken: token,
       payload,
     });
     if (expectedGeneration !== deviceRegistrationGeneration) {
@@ -475,7 +475,7 @@ function unregisterDeviceWithRelay(input: {
 
     const client = yield* ManagedRelay.ManagedRelayClient;
     yield* client.unregisterDevice({
-      clerkToken: token,
+      accountToken: token,
       deviceId: input.deviceId,
     });
   });
@@ -581,7 +581,7 @@ function readAgentActivitySnapshot(): Effect.Effect<
       return null;
     }
     const client = yield* ManagedRelay.ManagedRelayClient;
-    return yield* client.getAgentActivitySnapshot({ clerkToken: token });
+    return yield* client.getAgentActivitySnapshot({ accountToken: token });
   }).pipe(
     Effect.catch((error) =>
       Effect.sync(() => {
@@ -605,7 +605,7 @@ function registerLiveActivityWithRelay(
 
     const client = yield* ManagedRelay.ManagedRelayClient;
     yield* client.registerLiveActivity({
-      clerkToken: token,
+      accountToken: token,
       payload: body,
     });
     return true;

@@ -166,7 +166,7 @@ describe("mobile cloud link environment client", () => {
 
         const error = yield* withCloudServices(
           linkEnvironmentToCloudWithPreference({
-            clerkToken: "clerk-token",
+            accountToken: "clerk-token",
             connection: savedConnection,
             liveActivitiesEnabled: true,
           }),
@@ -199,7 +199,7 @@ describe("mobile cloud link environment client", () => {
 
       const error = yield* withCloudServices(
         linkEnvironmentToCloudWithPreference({
-          clerkToken: "clerk-token",
+          accountToken: "clerk-token",
           connection: savedConnection,
           liveActivitiesEnabled: true,
         }),
@@ -237,7 +237,7 @@ describe("mobile cloud link environment client", () => {
 
       const error = yield* withCloudServices(
         linkEnvironmentToCloudWithPreference({
-          clerkToken: "clerk-token",
+          accountToken: "clerk-token",
           connection: savedConnection,
           liveActivitiesEnabled: true,
         }),
@@ -275,7 +275,7 @@ describe("mobile cloud link environment client", () => {
 
       const error = yield* withCloudServices(
         linkEnvironmentToCloudWithPreference({
-          clerkToken: "clerk-token",
+          accountToken: "clerk-token",
           connection: savedConnection,
           liveActivitiesEnabled: true,
         }),
@@ -313,7 +313,7 @@ describe("mobile cloud link environment client", () => {
 
       yield* withCloudServices(
         linkEnvironmentToCloudWithPreference({
-          clerkToken: "clerk-token",
+          accountToken: "clerk-token",
           connection: savedConnection,
           liveActivitiesEnabled: false,
         }),
@@ -368,7 +368,7 @@ describe("mobile cloud link environment client", () => {
 
       yield* withCloudServices(
         linkEnvironmentToCloudWithPreference({
-          clerkToken: "clerk-token",
+          accountToken: "clerk-token",
           connection: savedConnection,
           liveActivitiesEnabled: true,
         }),

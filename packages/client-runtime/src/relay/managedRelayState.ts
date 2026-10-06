@@ -28,17 +28,17 @@ const isManagedRelayRequestFailedError = Schema.is(ManagedRelay.ManagedRelayRequ
 
 export interface ManagedRelaySession {
   readonly accountId: string;
-  readonly readClerkToken: () => Effect.Effect<string | null, ManagedRelaySessionError>;
+  readonly readAccountToken: () => Effect.Effect<string | null, ManagedRelaySessionError>;
 }
 
 export interface ManagedRelaySessionInput {
   readonly accountId: string;
-  readonly readClerkToken: () => Promise<string | null>;
+  readonly readAccountToken: () => Promise<string | null>;
 }
 
 interface ManagedRelaySessionControl {
-  readonly updateReadClerkToken: (
-    readClerkToken: ManagedRelaySessionInput["readClerkToken"],
+  readonly updateReadAccountToken: (
+    readAccountToken: ManagedRelaySessionInput["readAccountToken"],
   ) => void;
 }
 
@@ -51,7 +51,7 @@ export interface ManagedRelaySnapshotState<A> {
 
 export interface ManagedRelayQueryEvent {
   readonly operation: "environments" | "devices" | "environment-status";
-  readonly stage: "clerk-token" | "relay-request" | "validation";
+  readonly stage: "account-token" | "relay-request" | "validation";
   readonly phase: "start" | "success" | "failure";
   readonly accountId: string;
   readonly environmentId?: string;
@@ -78,10 +78,10 @@ const managedRelaySessionControls = new WeakMap<ManagedRelaySession, ManagedRela
 export function createManagedRelaySession(input: ManagedRelaySessionInput): ManagedRelaySession {
   let cachedToken: { readonly token: string; readonly expiresAtMillis: number } | null = null;
   let pendingToken: Promise<string | null> | null = null;
-  let readClerkToken = input.readClerkToken;
+  let readAccountToken = input.readAccountToken;
   let tokenProviderGeneration = 0;
 
-  const readCachedClerkToken = async (nowMillis: number): Promise<string | null> => {
+  const readCachedAccountToken = async (nowMillis: number): Promise<string | null> => {
     if (cachedToken && cachedToken.expiresAtMillis > nowMillis + CLERK_TOKEN_EXPIRY_SKEW_MS) {
       return cachedToken.token;
     }
@@ -90,7 +90,7 @@ export function createManagedRelaySession(input: ManagedRelaySessionInput): Mana
     }
 
     const operationGeneration = tokenProviderGeneration;
-    const operation = readClerkToken().then((token) => {
+    const operation = readAccountToken().then((token) => {
       if (operationGeneration !== tokenProviderGeneration) {
         return token;
       }
@@ -121,10 +121,10 @@ export function createManagedRelaySession(input: ManagedRelaySessionInput): Mana
 
   const session: ManagedRelaySession = {
     accountId: input.accountId,
-    readClerkToken: Effect.fn("clientRuntime.managedRelaySession.readClerkToken")(function* () {
+    readAccountToken: Effect.fn("clientRuntime.managedRelaySession.readAccountToken")(function* () {
       const nowMillis = yield* Clock.currentTimeMillis;
       return yield* Effect.tryPromise({
-        try: () => readCachedClerkToken(nowMillis),
+        try: () => readCachedAccountToken(nowMillis),
         catch: (cause) =>
           new ManagedRelaySessionError({
             message: "Could not obtain the T3 Connect session token.",
@@ -134,8 +134,8 @@ export function createManagedRelaySession(input: ManagedRelaySessionInput): Mana
     }),
   };
   managedRelaySessionControls.set(session, {
-    updateReadClerkToken: (nextReadClerkToken) => {
-      readClerkToken = nextReadClerkToken;
+    updateReadAccountToken: (nextReadAccountToken) => {
+      readAccountToken = nextReadAccountToken;
       tokenProviderGeneration += 1;
       pendingToken = null;
     },
@@ -159,7 +159,7 @@ export function setManagedRelaySession(
     if (control) {
       // Clerk can replace its token reader during routine same-account refreshes.
       // Keep the session stable so those refreshes do not invalidate queries or reconnect leases.
-      control.updateReadClerkToken(input.readClerkToken);
+      control.updateReadAccountToken(input.readAccountToken);
       return;
     }
   }
@@ -176,10 +176,10 @@ export function managedRelayAccountChanges(
   );
 }
 
-function readSessionClerkToken(
+function readSessionAccountToken(
   session: ManagedRelaySession,
 ): Effect.Effect<string, ManagedRelaySessionError> {
-  return session.readClerkToken().pipe(
+  return session.readAccountToken().pipe(
     Effect.filterOrFail(
       (token): token is string => Boolean(token),
       () =>
@@ -203,12 +203,12 @@ export const deregisterManagedRelayEnvironment = Effect.fn(
       message: "Sign in to T3 Connect before deregistering an environment.",
     });
   }
-  const clerkToken = yield* readSessionClerkToken(session);
+  const accountToken = yield* readSessionAccountToken(session);
   const relay = yield* ManagedRelay.ManagedRelayClient;
-  yield* relay.unlinkEnvironment({ clerkToken, environmentId: input.environmentId });
+  yield* relay.unlinkEnvironment({ accountToken, environmentId: input.environmentId });
 });
 
-function requireClerkToken(
+function requireAccountToken(
   get: Atom.AtomContext,
   accountId: string,
 ): Effect.Effect<string, ManagedRelaySessionError> {
@@ -220,7 +220,7 @@ function requireClerkToken(
       }),
     );
   }
-  return readSessionClerkToken(session);
+  return readSessionAccountToken(session);
 }
 
 function statusKey(input: {
@@ -342,14 +342,14 @@ export function createManagedRelayQueryManager(
       .atom((get) =>
         Effect.gen(function* () {
           const base = { operation: "environments" as const, accountId };
-          const clerkToken = yield* observe(
-            { ...base, stage: "clerk-token" },
-            requireClerkToken(get, accountId),
+          const accountToken = yield* observe(
+            { ...base, stage: "account-token" },
+            requireAccountToken(get, accountId),
           );
           const relay = yield* ManagedRelay.ManagedRelayClient;
           return yield* observe(
             { ...base, stage: "relay-request" },
-            relay.listEnvironments({ clerkToken }),
+            relay.listEnvironments({ accountToken }),
           );
         }),
       )
@@ -365,14 +365,14 @@ export function createManagedRelayQueryManager(
       .atom((get) =>
         Effect.gen(function* () {
           const base = { operation: "devices" as const, accountId };
-          const clerkToken = yield* observe(
-            { ...base, stage: "clerk-token" },
-            requireClerkToken(get, accountId),
+          const accountToken = yield* observe(
+            { ...base, stage: "account-token" },
+            requireAccountToken(get, accountId),
           );
           const relay = yield* ManagedRelay.ManagedRelayClient;
           return yield* observe(
             { ...base, stage: "relay-request" },
-            relay.listDevices({ clerkToken }),
+            relay.listDevices({ accountToken }),
           );
         }),
       )
@@ -393,15 +393,15 @@ export function createManagedRelayQueryManager(
             accountId,
             environmentId: environment.environmentId,
           };
-          const clerkToken = yield* observe(
-            { ...base, stage: "clerk-token" },
-            requireClerkToken(get, accountId),
+          const accountToken = yield* observe(
+            { ...base, stage: "account-token" },
+            requireAccountToken(get, accountId),
           );
           const relay = yield* ManagedRelay.ManagedRelayClient;
           const status = yield* observe(
             { ...base, stage: "relay-request" },
             relay.getEnvironmentStatus({
-              clerkToken,
+              accountToken,
               scopes: [RelayEnvironmentStatusScope, RelayEnvironmentConnectScope],
               environmentId: environment.environmentId,
             }),

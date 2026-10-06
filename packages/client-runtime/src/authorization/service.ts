@@ -280,7 +280,7 @@ export const make = Effect.gen(function* () {
     identity: ClientCapabilities.CloudSessionIdentity,
   ) {
     yield* assertSession(identity);
-    const clerkToken = yield* cloudSession.clerkToken.pipe(
+    const accountToken = yield* cloudSession.accountToken.pipe(
       Effect.withSpan("relay.connection.cloudSessionToken.resolve"),
     );
     const deviceId = yield* deviceIdentity.deviceId.pipe(
@@ -289,7 +289,7 @@ export const make = Effect.gen(function* () {
     yield* assertSession(identity);
     const connected = yield* relay
       .connectEnvironment({
-        clerkToken,
+        accountToken,
         scopes: [RelayEnvironmentConnectScope],
         environmentId,
         ...(Option.isSome(deviceId) ? { deviceId: deviceId.value } : {}),

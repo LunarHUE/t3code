@@ -82,66 +82,18 @@ it.effect("rejects malformed or insecure hosted app URLs", () =>
   }),
 );
 
-it.effect("derives direct Clerk OAuth endpoints from statically injected public config", () =>
+it.effect("derives broker endpoints from relay origin without IdP client configuration", () =>
   Effect.gen(function* () {
-    const config = yield* makeCloudCliOAuthConfig({
-      clerkPublishableKeyFallback: "pk_test_Y2xlcmsuZXhhbXBsZS50ZXN0JA==",
-      clerkCliOAuthClientIdFallback: "oauth_client_embedded",
-    }).pipe(provideEnv({}));
-
-    assert.deepEqual(config, {
-      tokenEndpoint: "https://clerk.example.test/oauth/token",
-      deviceAuthorizationEndpoint: "https://clerk.example.test/oauth/device_authorization",
-      clientId: "oauth_client_embedded",
-      loopbackPort: 34338,
-      redirectUri: "http://127.0.0.1:34338/callback",
-      scopes: ["openid", "profile", "email", "offline_access"],
-    });
-  }),
-);
-
-it.effect("prefers runtime Clerk OAuth config overrides over statically injected values", () =>
-  Effect.gen(function* () {
-    const config = yield* makeCloudCliOAuthConfig({
-      clerkPublishableKeyFallback: "pk_test_ZW1iZWRkZWQuZXhhbXBsZS50ZXN0JA==",
-      clerkCliOAuthClientIdFallback: "oauth_client_embedded",
-    }).pipe(
-      provideEnv({
-        T3CODE_CLERK_PUBLISHABLE_KEY: "pk_test_cnVudGltZS5leGFtcGxlLnRlc3Qk",
-        T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: "oauth_client_runtime",
-      }),
+    const config = yield* makeCloudCliOAuthConfig("https://embedded.example.test").pipe(
+      provideEnv({}),
     );
-
-    assert.equal(config.tokenEndpoint, "https://runtime.example.test/oauth/token");
-    assert.equal(config.clientId, "oauth_client_runtime");
-  }),
-);
-
-it.effect("requires Clerk OAuth config when the server bundle has no injected values", () =>
-  makeCloudCliOAuthConfig({
-    clerkPublishableKeyFallback: "",
-    clerkCliOAuthClientIdFallback: "",
-  }).pipe(provideEnv({}), Effect.flip),
-);
-
-it.effect("reports malformed Clerk publishable keys as typed configuration failures", () =>
-  Effect.gen(function* () {
-    const result = yield* makeCloudCliOAuthConfig({
-      clerkPublishableKeyFallback: "pk_test_not-base64!!",
-      clerkCliOAuthClientIdFallback: "oauth_client_embedded",
-    }).pipe(provideEnv({}), Effect.result);
-
-    assert.isTrue(Result.isFailure(result));
-    if (Result.isFailure(result)) {
-      assert.equal(result.failure.cause._tag, "SourceError");
-      if (result.failure.cause._tag === "SourceError") {
-        assert.equal(
-          result.failure.cause.message,
-          "Failed to derive Clerk Frontend API URL from the publishable key.",
-        );
-        assert.instanceOf(result.failure.cause.cause, Error);
-      }
-    }
+    assert.equal(config.tokenEndpoint, "https://embedded.example.test/auth/token");
+    assert.equal(config.deviceAuthorizationEndpoint, "https://embedded.example.test/auth/device");
+    assert.equal(config.clientId, "t3-cli");
+    const runtime = yield* makeCloudCliOAuthConfig("https://embedded.example.test").pipe(
+      provideEnv({ T3CODE_RELAY_URL: "https://runtime.example.test" }),
+    );
+    assert.equal(runtime.tokenEndpoint, "https://runtime.example.test/auth/token");
   }),
 );
 

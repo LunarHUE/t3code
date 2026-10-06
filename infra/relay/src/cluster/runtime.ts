@@ -2,6 +2,9 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as Layer from "effect/Layer";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as RelayDb from "../db.ts";
+import * as AuthBroker from "../auth/AuthBroker.ts";
+import * as BrokerStore from "../auth/BrokerStore.ts";
+import * as OidcClient from "../auth/OidcClient.ts";
 import * as Config from "./config.ts";
 import * as Database from "./database.ts";
 import * as PrivateEndpoints from "./PrivateEndpoints.ts";
@@ -35,6 +38,12 @@ import * as WebCrypto from "../WebCrypto.ts";
 // Keep the Cloudflare entrypoint intact; both runtimes use the same domain services.
 export const layer = Layer.empty
   .pipe(
+    Layer.provideMerge(
+      AuthBroker.layer.pipe(
+        Layer.provideMerge(BrokerStore.layer),
+        Layer.provideMerge(OidcClient.layer),
+      ),
+    ),
     Layer.provideMerge(MobileRegistrations.layer),
     Layer.provideMerge(AgentActivityPublisher.layer),
     Layer.provideMerge(EnvironmentConnector.layer),

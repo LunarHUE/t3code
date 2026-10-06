@@ -1,11 +1,11 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
-import { connectCliAuthRoutesEnabled } from "../cloud/connectCliAuth";
+import { hasCloudPublicConfig } from "../cloud/publicConfig";
 import { ConnectCliAuthorizeSurface } from "../components/cloud/ConnectCliAuthSurface";
 
 export const Route = createFileRoute("/connect")({
   beforeLoad: () => {
-    if (!connectCliAuthRoutesEnabled()) {
+    if (!hasCloudPublicConfig()) {
       throw redirect({ to: "/", replace: true });
     }
   },

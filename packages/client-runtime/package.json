@@ -382,6 +382,14 @@
     "./device/duo-control": {
       "types": "./src/device/duoControl.ts",
       "default": "./src/device/duoControl.ts"
+    },
+    "./account-auth": {
+      "types": "./src/relay/accountAuth.ts",
+      "default": "./src/relay/accountAuth.ts"
+    },
+    "./account-auth-react": {
+      "types": "./src/relay/accountAuthReact.tsx",
+      "default": "./src/relay/accountAuthReact.tsx"
     }
   },
   "scripts": {
@@ -401,8 +409,13 @@
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
+    "@types/react": "~19.3.0",
     "@types/three": "0.180.0",
     "micromark-util-types": "^2.0.2",
+    "react": "19.2.6",
     "vite-plus": "catalog:"
+  },
+  "peerDependencies": {
+    "react": "^19.2.0"
   }
 }

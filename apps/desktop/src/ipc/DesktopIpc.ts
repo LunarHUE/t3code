@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 
 export interface DesktopIpcInvokeEvent {
+  readonly senderFrame?: { readonly parent: unknown; readonly url: string } | null;
   readonly sender: { readonly id: number };
 }
 

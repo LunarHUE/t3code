@@ -27,8 +27,6 @@ if (isElectron) {
   syncDocumentWindowControlsOverlayClass();
 }
 
-const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
-
 // A failed split-chunk fetch usually means the hashed assets went stale under
 // a deploy; one guarded reload picks up the fresh index.html.
 let chunkLoadFailed = false;
@@ -43,16 +41,7 @@ window.addEventListener("vite:preloadError", (event) => {
 
 const app = <AppRoot router={router} />;
 
-// Managed auth is cloud-only, and the Electron Clerk provider bundles the full
-// clerk-js runtime. Loading only the selected runtime as a split chunk keeps
-// every Clerk byte out of the startup graph for local-mode users, and keeps
-// the bundled clerk-js out of the browser build entirely.
-const managedAuthShellModule =
-  clerkPublishableKey && hasCloudPublicConfig()
-    ? isElectron
-      ? import("./components/clerk/ElectronManagedAuthShell")
-      : import("./components/clerk/BrowserManagedAuthShell")
-    : null;
+const managedAuthShellModule = hasCloudPublicConfig() ? import("./cloud/accountAuth") : null;
 
 // The index.html boot splash lives inside #root, and React's first commit
 // clears it. Resolve everything that first commit needs, the selected
@@ -72,11 +61,7 @@ export const startup = Promise.all([
     if (!chunkLoadFailed) clearChunkReloadGuard();
     ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
       <React.StrictMode>
-        {ManagedAuthShell && clerkPublishableKey ? (
-          <ManagedAuthShell publishableKey={clerkPublishableKey}>{app}</ManagedAuthShell>
-        ) : (
-          app
-        )}
+        {ManagedAuthShell ? <ManagedAuthShell>{app}</ManagedAuthShell> : app}
       </React.StrictMode>,
     );
   })

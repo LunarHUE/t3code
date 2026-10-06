@@ -13,6 +13,8 @@ import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import { RelayApi } from "@t3tools/contracts/relay";
 import * as Api from "../http/Api.ts";
+import * as AuthApi from "../http/AuthApi.ts";
+import * as BrokerStore from "../auth/BrokerStore.ts";
 import * as HookForwarder from "../hooks/HookForwarder.ts";
 import * as DpopProofs from "../auth/DpopProofs.ts";
 import * as AgentActivityRows from "../agentActivity/AgentActivityRows.ts";
@@ -39,6 +41,7 @@ const routes = Layer.mergeAll(
 const app = Layer.mergeAll(
   HttpApiBuilder.layer(RelayApi, { openapiPath: "/openapi.json" }).pipe(Layer.provide(routes)),
   HttpRouter.add("GET", "/livez", HttpServerResponse.json({ ok: true })),
+  AuthApi.layer,
 ).pipe(Layer.provide(Api.layerCors));
 
 const serve = Layer.unwrap(
@@ -53,6 +56,7 @@ const serve = Layer.unwrap(
 );
 const cleanup = Effect.gen(function* () {
   yield* (yield* DpopProofs.DpopProofReplay).pruneExpired;
+  yield* (yield* BrokerStore.BrokerStore).prune;
   const now = yield* DateTime.now;
   yield* (yield* AgentActivityRows.AgentActivityRows).pruneTerminal({
     updatedBefore: DateTime.formatIso(DateTime.subtract(now, { minutes: 30 })),
@@ -81,9 +85,9 @@ const program = Effect.gen(function* () {
     case "deliver":
       return yield* deliver;
     case "migrate-cluster":
-      return yield* Effect.all([HookInbox.migrate, RateLimiter.migrate], { discard: true }).pipe(
-        Effect.provide(Database.layer),
-      );
+      return yield* Effect.all([HookInbox.migrate, RateLimiter.migrate, BrokerStore.migrate], {
+        discard: true,
+      }).pipe(Effect.provide(Database.layer));
     default:
       return yield* Effect.die("Expected serve, cleanup, deliver, or migrate-cluster.");
   }

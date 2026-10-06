@@ -76,7 +76,7 @@ describe("liveActivityPreferences", () => {
       yield* setLiveActivityUpdatesEnabled({
         enabled: false,
         previousEnabled: true,
-        clerkToken: "clerk-token",
+        accountToken: "clerk-token",
         connections: [connection],
       });
 
@@ -84,7 +84,7 @@ describe("liveActivityPreferences", () => {
         liveActivitiesEnabled: false,
       });
       expect(linkEnvironmentToCloudWithPreference).toHaveBeenCalledWith({
-        clerkToken: "clerk-token",
+        accountToken: "clerk-token",
         connection,
         liveActivitiesEnabled: false,
       });
@@ -96,7 +96,7 @@ describe("liveActivityPreferences", () => {
       yield* setLiveActivityUpdatesEnabled({
         enabled: true,
         previousEnabled: false,
-        clerkToken: "clerk-token",
+        accountToken: "clerk-token",
         connections: [connection],
       });
 
@@ -104,7 +104,7 @@ describe("liveActivityPreferences", () => {
         liveActivitiesEnabled: true,
       });
       expect(linkEnvironmentToCloudWithPreference).toHaveBeenCalledWith({
-        clerkToken: "clerk-token",
+        accountToken: "clerk-token",
         connection,
         liveActivitiesEnabled: true,
       });
@@ -116,7 +116,7 @@ describe("liveActivityPreferences", () => {
       yield* setLiveActivityUpdatesEnabled({
         enabled: false,
         previousEnabled: true,
-        clerkToken: null,
+        accountToken: null,
         connections: [connection],
       });
 
@@ -137,13 +137,13 @@ describe("liveActivityPreferences", () => {
       yield* setLiveActivityUpdatesEnabled({
         enabled: true,
         previousEnabled: false,
-        clerkToken: "clerk-token",
+        accountToken: "clerk-token",
         connections: [connection, managedConnection],
       });
 
       expect(linkEnvironmentToCloudWithPreference).toHaveBeenCalledTimes(1);
       expect(linkEnvironmentToCloudWithPreference).toHaveBeenCalledWith({
-        clerkToken: "clerk-token",
+        accountToken: "clerk-token",
         connection,
         liveActivitiesEnabled: true,
       });
@@ -160,7 +160,7 @@ describe("liveActivityPreferences", () => {
         setLiveActivityUpdatesEnabled({
           enabled: false,
           previousEnabled: true,
-          clerkToken: "clerk-token",
+          accountToken: "clerk-token",
           connections: [connection],
         }),
       );
@@ -173,12 +173,12 @@ describe("liveActivityPreferences", () => {
         liveActivitiesEnabled: true,
       });
       expect(linkEnvironmentToCloudWithPreference).toHaveBeenNthCalledWith(1, {
-        clerkToken: "clerk-token",
+        accountToken: "clerk-token",
         connection,
         liveActivitiesEnabled: false,
       });
       expect(linkEnvironmentToCloudWithPreference).toHaveBeenNthCalledWith(2, {
-        clerkToken: "clerk-token",
+        accountToken: "clerk-token",
         connection,
         liveActivitiesEnabled: true,
       });
