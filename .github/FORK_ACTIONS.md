@@ -58,5 +58,11 @@ Configure the `production` GitHub environment with our own values:
 
 Set the repository variable `RELAY_DEPLOY_ENABLED=true` when these are ready.
 Until then deployment is skipped. It runs from main on relevant source changes
-or manual dispatch. The `force` input reconciles configuration-only changes.
+or manual dispatch. Leave `force` unchecked for configuration-only changes;
+forcing also replaces the Postgres runtime role and its password.
+
+`RELAY_TUNNEL_CLEANUP_MODE` and `RELAY_LEGACY_TUNNEL_CLEANUP_MODE` are optional
+production environment variables. Both default to `off`; review the upstream
+cleanup runbook before enabling either. Keep the upstream nullable
+`tunnel_released_at` migration with the corresponding relay/client changes.
 No deployment was performed as part of this cleanup.
