@@ -13,6 +13,7 @@ import {
 import * as NodeFSP from "node:fs/promises";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -24,6 +25,7 @@ import {
   probeClaudeCapabilities,
   probeClaudeWorkspaceSnapshot,
 } from "./ClaudeProvider.ts";
+import { ClaudeExecutableFileCheck } from "./Drivers/ClaudeExecutable.ts";
 import { COMPACT_SLASH_COMMAND } from "./providerSnapshot.ts";
 
 vi.mock("@anthropic-ai/claude-agent-sdk", { spy: true });
@@ -41,6 +43,7 @@ it("isolates Claude capability probes without dropping workspace setting sources
       FORCE_CODE_TERMINAL: "1",
     },
     cwd: "/workspace/project",
+    managedMcpConfig: false,
   });
 
   assert.deepEqual(options.mcpServers, {});
@@ -59,7 +62,51 @@ it("isolates Claude capability probes without dropping workspace setting sources
   assert.equal(options.env?.CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL, "1");
 });
 
+it("leaves MCP isolation to a managed MCP config, which rejects --strict-mcp-config", () => {
+  const options = buildClaudeCapabilitiesProbeQueryOptions({
+    executablePath: "/usr/bin/claude",
+    abortController: new AbortController(),
+    environment: {},
+    cwd: "/workspace/project",
+    managedMcpConfig: true,
+  });
+
+  assert.equal(options.mcpServers, undefined);
+  assert.equal(options.strictMcpConfig, undefined);
+  assert.equal(options.env?.ENABLE_CLAUDEAI_MCP_SERVERS, "false");
+});
+
 it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
+  it.effect("drops --strict-mcp-config when the machine has a managed MCP config", () =>
+    Effect.gen(function* () {
+      const query = vi.spyOn(ClaudeSdk, "query").mockImplementation(
+        () =>
+          ({
+            initializationResult: async () => ({ account: {}, commands: [] }),
+          }) as unknown as ReturnType<typeof ClaudeSdk.query>,
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(() => query.mockRestore()));
+
+      const capabilities = yield* probeClaudeCapabilities(
+        decodeClaudeSettings({}),
+        {},
+        "/workspace/project",
+        false,
+      ).pipe(
+        Effect.provideService(HostProcessPlatform, "linux"),
+        Effect.provideService(
+          ClaudeExecutableFileCheck,
+          (filePath) => filePath === "/etc/claude-code/managed-mcp.json",
+        ),
+      );
+
+      assert.notEqual(capabilities, undefined);
+      const options = query.mock.calls[0]?.[0].options;
+      assert.equal(options?.strictMcpConfig, undefined);
+      assert.equal(options?.mcpServers, undefined);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect(
     "discovers commands and skills separately for each cwd without replacing machine metadata",
     () =>
