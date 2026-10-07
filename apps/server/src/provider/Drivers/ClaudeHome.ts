@@ -1,11 +1,13 @@
 import * as NodeOS from "node:os";
 
 import type { ClaudeSettings } from "@t3tools/contracts";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
 import { expandHomePath } from "../../pathExpansion.ts";
+import { ClaudeExecutableFileCheck } from "./ClaudeExecutable.ts";
 
 const quotePath = Schema.encodeSync(Schema.fromJsonString(Schema.String));
 
@@ -88,3 +90,29 @@ export const claudeSignedOutMessage = (input: {
       : "";
   return `Claude could not authenticate. For subscription login, run \`claude auth login\` on this environment's machine${configuration}, then start a new thread. For API-key authentication, check this instance's configured credentials.`;
 };
+
+/**
+ * Where Claude Code reads an administrator's `managed-mcp.json`. When that file
+ * exists the CLI owns the MCP server list and rejects `--strict-mcp-config`.
+ */
+const claudeManagedMcpConfigPath = (
+  platform: NodeJS.Platform,
+  environment: NodeJS.ProcessEnv,
+): string => {
+  switch (platform) {
+    case "darwin":
+      return "/Library/Application Support/ClaudeCode/managed-mcp.json";
+    case "win32":
+      return `${environment.ProgramFiles ?? "C:\\Program Files"}\\ClaudeCode\\managed-mcp.json`;
+    default:
+      return "/etc/claude-code/managed-mcp.json";
+  }
+};
+
+export const hasClaudeManagedMcpConfig = Effect.fn("hasClaudeManagedMcpConfig")(function* (
+  environment: NodeJS.ProcessEnv,
+): Effect.fn.Return<boolean> {
+  const platform = yield* HostProcessPlatform;
+  const isFile = yield* ClaudeExecutableFileCheck;
+  return isFile(claudeManagedMcpConfigPath(platform, environment));
+});

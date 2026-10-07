@@ -35,7 +35,7 @@ import {
   type ServerProviderDraft,
 } from "./providerSnapshot.ts";
 import { resolveClaudeSdkExecutablePath } from "./Drivers/ClaudeExecutable.ts";
-import { makeClaudeEnvironment } from "./Drivers/ClaudeHome.ts";
+import { hasClaudeManagedMcpConfig, makeClaudeEnvironment } from "./Drivers/ClaudeHome.ts";
 import { discoverClaudeSkills } from "./Drivers/ClaudeSkills.ts";
 import type { ProviderWorkspaceSnapshot } from "./ProviderDriver.ts";
 import { makeUnavailableUsageLimits } from "./providerUsageLimits.ts";
@@ -173,6 +173,7 @@ function apiProviderAuthMetadata(
 // account info. The previous 8s budget expired mid-init, so the probe returned
 // `undefined` and left the provider unverified and unselectable in the picker.
 const CAPABILITIES_PROBE_TIMEOUT_MS = 25_000;
+const PROBE_STDERR_LIMIT = 2_000;
 
 /**
  * Keep workspace-scoped command discovery intact while isolating the periodic
@@ -190,6 +191,8 @@ export function buildClaudeCapabilitiesProbeQueryOptions(input: {
   readonly abortController: AbortController;
   readonly environment: NodeJS.ProcessEnv;
   readonly cwd: string | undefined;
+  readonly managedMcpConfig: boolean;
+  readonly stderr?: (data: string) => void;
 }): ClaudeQueryOptions {
   return {
     persistSession: false,
@@ -202,9 +205,10 @@ export function buildClaudeCapabilitiesProbeQueryOptions(input: {
     settings: { disableAllHooks: true },
     allowedTools: [],
     // Ignore MCP definitions from every filesystem setting source above. The
-    // SDK combines this empty explicit map with --strict-mcp-config.
-    mcpServers: {},
-    strictMcpConfig: true,
+    // SDK combines this empty explicit map with --strict-mcp-config. A managed
+    // MCP config already excludes them, and the CLI refuses to start when it
+    // is combined with --strict-mcp-config.
+    ...(input.managedMcpConfig ? {} : { mcpServers: {}, strictMcpConfig: true }),
     env: {
       ...input.environment,
       // Connected claude.ai MCP servers are discovered outside filesystem
@@ -218,7 +222,7 @@ export function buildClaudeCapabilitiesProbeQueryOptions(input: {
       CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL: "1",
     },
     ...(input.cwd ? { cwd: input.cwd } : {}),
-    stderr: () => {},
+    stderr: input.stderr ?? (() => {}),
   };
 }
 
@@ -338,12 +342,14 @@ const probeClaudeCapabilities = (
   includeUsage = true,
 ) => {
   const abort = new AbortController();
+  let stderr = "";
   return Effect.gen(function* () {
     const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, environment);
     const executablePath = yield* resolveClaudeSdkExecutablePath(
       claudeSettings.binaryPath,
       claudeEnvironment,
     );
+    const managedMcpConfig = yield* hasClaudeManagedMcpConfig(claudeEnvironment);
     return yield* Effect.tryPromise(async () => {
       const q = claudeQuery({
         // Never yield — we only need initialization data, not a conversation.
@@ -357,6 +363,10 @@ const probeClaudeCapabilities = (
           abortController: abort,
           environment: claudeEnvironment,
           cwd,
+          managedMcpConfig,
+          stderr: (data) => {
+            stderr = (stderr + data).slice(-PROBE_STDERR_LIMIT);
+          },
         }),
       });
       const init = await q.initializationResult();
@@ -403,6 +413,15 @@ const probeClaudeCapabilities = (
       }),
     ),
     Effect.result,
+    Effect.tap((result) =>
+      Result.isFailure(result)
+        ? Effect.logWarning("Claude capabilities probe failed.", {
+            cwd,
+            cause: result.failure,
+            stderr: stderr.trim(),
+          })
+        : Effect.void,
+    ),
     Effect.map((result) => (Result.isSuccess(result) ? result.success : undefined)),
   );
 };
