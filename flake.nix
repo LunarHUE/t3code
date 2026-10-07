@@ -7,16 +7,16 @@
     { self, nixpkgs }:
     let
       # Bump with each fork release. Hashes are the SRI sha256 of the release tarballs.
-      version = "0.0.46-preview.20261006.2";
+      version = "0.0.46-preview.20261007.3";
       relayUrl = "https://t3connect.lunarhue.com";
       targets = {
         x86_64-linux = {
           arch = "linux-x64";
-          hash = "sha256-EDy11xcmYUdcdukAWcQUAYf6p+7Sbqy7equPDORhn7c=";
+          hash = "sha256-SpGkNcQdKKdt0rfTid1bG0v9/yeQ9sWjkgRcKYBHULA=";
         };
         aarch64-linux = {
           arch = "linux-arm64";
-          hash = "sha256-XhRNusxB+dLL1CXF0HJH11z1A2oBw7IX+zYj1o90YSo=";
+          hash = "sha256-jyPuxbAroDNRRuwO894D+ItXT+o3Qy68aNlDlR/mgOo=";
         };
       };
       forAllSystems =
