@@ -8,6 +8,13 @@ import { ChevronDownIcon, PlusIcon } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { useT3ProjectFileState } from "../../hooks/useT3ProjectFileScripts";
 import { useEnvironments } from "../../state/environments";
+import { useClientSettings, persistClientSettingsUpdate } from "../../hooks/useSettings";
+import { serverEnvironment } from "../../state/server";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { mergeProjectActions } from "@t3tools/client-runtime/project-actions";
+import { GlobalActionsSettings } from "./GlobalActionsSettings";
+import { ActionVariablesEditor } from "./ActionVariablesEditor";
+import { toastManager } from "../ui/toast";
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
   editorRequestForScript,
@@ -41,12 +48,73 @@ import { useSettingsScope } from "./SettingsScopeContext";
 export function ProjectActionsSettings() {
   const { scope, targets, target } = useSettingsScope();
   const { environments } = useEnvironments();
+  const clientSettings = useClientSettings();
+  const updateSettings = useAtomCommand(
+    serverEnvironment.updateSettings,
+    "action variables update",
+  );
+  const [variablesSaving, setVariablesSaving] = useState(false);
   const isProjectScope = scope.kind === "project" || scope.kind === "checkout";
   const representativeConfig = target
     ? environments.find((environment) => environment.environmentId === target.environmentId)
         ?.serverConfig
     : undefined;
   const scripts = target?.settings.defaultProjectScripts ?? [];
+  const hiddenIds = target?.settings.hiddenGlobalActionIds ?? [];
+  const actionEntries = mergeProjectActions(clientSettings.globalActions, scripts, hiddenIds);
+  async function saveProjectActionSettings(
+    patch: { actionVariables?: Record<string, string> },
+    visibility?: { id: string; hidden: boolean },
+  ) {
+    setVariablesSaving(true);
+    try {
+      let saved = false;
+      for (const candidate of targets) {
+        const config = environments.find(
+          (entry) => entry.environmentId === candidate.environmentId,
+        )?.serverConfig;
+        if (!config || !candidate.projectId) continue;
+        if (!config.environment.capabilities.projectSettingsOverrides) {
+          throw new Error("Update this environment to save project action settings.");
+        }
+        const settings = config.settings;
+        const previous = settings.projectSettingsOverrides[candidate.projectId];
+        const hidden = previous?.hiddenGlobalActionIds ?? settings.hiddenGlobalActionIds;
+        const result = await updateSettings({
+          environmentId: candidate.environmentId,
+          input: {
+            patch: {
+              projectSettingsOverrides: {
+                [candidate.projectId]: {
+                  ...previous,
+                  ...patch,
+                  ...(visibility
+                    ? {
+                        hiddenGlobalActionIds: visibility.hidden
+                          ? [...new Set([...hidden, visibility.id])]
+                          : hidden.filter((id) => id !== visibility.id),
+                      }
+                    : {}),
+                },
+              },
+            },
+          },
+        });
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        saved = true;
+      }
+      if (!saved) throw new Error("Connect to this project's environment to save action settings.");
+    } catch (error) {
+      toastManager.add({
+        type: "error",
+        title: "Action settings not saved",
+        description: error instanceof Error ? error.message : "Unable to save action settings.",
+      });
+      throw error;
+    } finally {
+      setVariablesSaving(false);
+    }
+  }
   const keybindings = representativeConfig?.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS;
   const mixed = targets.some(
     (candidate) =>
@@ -108,6 +176,8 @@ export function ProjectActionsSettings() {
     async (fileScript: T3ProjectFileScript) => {
       const payload: NewProjectScriptInput = {
         name: fileScript.name,
+        kind: fileScript.kind ?? "command",
+        ...(fileScript.id ? { id: fileScript.id } : {}),
         command: fileScript.command,
         icon: fileScript.icon ?? "play",
         runOnWorktreeCreate: fileScript.runOnWorktreeCreate ?? false,
@@ -130,98 +200,203 @@ export function ProjectActionsSettings() {
   );
 
   return (
-    <SettingsSection id="project-actions" title="Actions">
-      <SettingsRow
-        serverScoped
-        settingKeys={["defaultProjectScripts"]}
-        mixed={mixed}
-        title="Actions"
-        description="Commands that run in this project's checkout or its worktree, with optional shortcuts."
-        onResetOverride={() => void persist(() => null)}
-        control={
-          <div className="flex flex-wrap items-center gap-1.5">
-            {importableScripts.length > 0 ? (
-              <Menu>
-                <MenuTrigger
-                  render={
-                    <Button
-                      id="import-scripts"
-                      size="xs"
-                      variant="ghost"
-                      disabled={saving}
-                      type="button"
-                    />
-                  }
-                >
-                  Import scripts
-                  <ChevronDownIcon className="size-3.5" />
-                </MenuTrigger>
-                <MenuPopup align="end">
-                  <MenuGroup>
-                    <MenuGroupLabel>Import from t3.json</MenuGroupLabel>
-                    <p className="px-2 pb-2 text-pretty text-sm text-muted-foreground">
-                      Add actions declared by this checkout without editing them first.
-                    </p>
-                  </MenuGroup>
-                  <MenuSeparator />
-                  {importableScripts.map((fileScript) => (
-                    <MenuItem
-                      key={`${fileScript.name} ${fileScript.command}`}
-                      onClick={() => void importFileScript(fileScript)}
-                    >
-                      <ScriptIcon icon={fileScript.icon ?? "play"} className="size-4 shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate font-medium">{fileScript.name}</div>
-                        <div className="truncate font-mono text-muted-foreground">
-                          {fileScript.command}
+    <>
+      <GlobalActionsSettings />
+      <SettingsSection id="project-actions" title="Actions">
+        <SettingsRow
+          serverScoped
+          settingKeys={["defaultProjectScripts"]}
+          mixed={mixed}
+          title="Actions"
+          description="Commands run on the environment. Links open on your device. Editing a global action here overrides it for this project."
+          onResetOverride={() => void persist(() => null)}
+          control={
+            <div className="flex flex-wrap items-center gap-1.5">
+              {importableScripts.length > 0 ? (
+                <Menu>
+                  <MenuTrigger
+                    render={
+                      <Button
+                        id="import-scripts"
+                        size="xs"
+                        variant="ghost"
+                        disabled={saving}
+                        type="button"
+                      />
+                    }
+                  >
+                    Import scripts
+                    <ChevronDownIcon className="size-3.5" />
+                  </MenuTrigger>
+                  <MenuPopup align="end">
+                    <MenuGroup>
+                      <MenuGroupLabel>Import from t3.json</MenuGroupLabel>
+                      <p className="px-2 pb-2 text-pretty text-sm text-muted-foreground">
+                        Add actions declared by this checkout without editing them first.
+                      </p>
+                    </MenuGroup>
+                    <MenuSeparator />
+                    {importableScripts.map((fileScript) => (
+                      <MenuItem
+                        key={`${fileScript.name} ${fileScript.command}`}
+                        onClick={() => void importFileScript(fileScript)}
+                      >
+                        <ScriptIcon icon={fileScript.icon ?? "play"} className="size-4 shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate font-medium">{fileScript.name}</div>
+                          <div className="truncate font-mono text-muted-foreground">
+                            {fileScript.command}
+                          </div>
                         </div>
+                      </MenuItem>
+                    ))}
+                  </MenuPopup>
+                </Menu>
+              ) : null}
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={saving || targets.length === 0}
+                onClick={() => setRequest({ scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT })}
+              >
+                <PlusIcon className="size-3.5" />
+                Add action
+              </Button>
+            </div>
+          }
+        />
+        {mixed ? (
+          <SettingsRow
+            title="Different actions across environments"
+            description="Choose one environment to edit its list. Adding an action here adds it on every selected environment."
+          />
+        ) : (
+          <>
+            <ProjectActionsList
+              scripts={actionEntries.filter((entry) => !entry.hidden).map((entry) => entry.action)}
+              keybindings={keybindings}
+              disabled={saving}
+              onEdit={(script) => setRequest(editorRequestForScript(script, keybindings))}
+            />
+            {isProjectScope &&
+              actionEntries
+                .filter((entry) => entry.source !== "project")
+                .map((entry) => (
+                  <SettingsRow
+                    key={`global-${entry.action.id}`}
+                    title={entry.action.name}
+                    description={
+                      entry.hidden
+                        ? "Hidden in this project"
+                        : entry.source === "override"
+                          ? "Overrides global action"
+                          : "Global action"
+                    }
+                    control={
+                      <div className="flex gap-2">
+                        {!entry.hidden && (
+                          <Button
+                            size="xs"
+                            variant="ghost"
+                            disabled={saving || variablesSaving}
+                            onClick={() => {
+                              void saveProjectActionSettings(
+                                {},
+                                { id: entry.action.id, hidden: true },
+                              ).catch(() => undefined);
+                            }}
+                          >
+                            Hide
+                          </Button>
+                        )}
+                        {(entry.hidden || entry.source === "override") && (
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            disabled={saving || variablesSaving}
+                            onClick={() => {
+                              void (async () => {
+                                const result = await persist((current) =>
+                                  current.filter((script) => script.id !== entry.action.id),
+                                );
+                                if (result._tag === "Success") {
+                                  await saveProjectActionSettings(
+                                    {},
+                                    { id: entry.action.id, hidden: false },
+                                  );
+                                }
+                              })().catch(() => undefined);
+                            }}
+                          >
+                            Reset to global
+                          </Button>
+                        )}
                       </div>
-                    </MenuItem>
-                  ))}
-                </MenuPopup>
-              </Menu>
-            ) : null}
-            <Button
-              size="xs"
-              variant="outline"
-              disabled={saving || targets.length === 0}
-              onClick={() => setRequest({ scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT })}
-            >
-              <PlusIcon className="size-3.5" />
-              Add action
-            </Button>
-          </div>
-        }
-      />
-      {mixed ? (
-        <SettingsRow
-          title="Different actions across environments"
-          description="Choose one environment to edit its list. Adding an action here adds it on every selected environment."
-        />
-      ) : (
-        <ProjectActionsList
+                    }
+                  />
+                ))}
+          </>
+        )}
+        {isProjectScope && (
+          <SettingsRow
+            title="Project action variables"
+            description={
+              <>
+                String values available as {"{{project.name}}"}, {"{{project.sshName}}"}, or other
+                named project variables.
+              </>
+            }
+            control={
+              <ActionVariablesEditor
+                values={target?.settings.actionVariables ?? {}}
+                onSave={(values) => saveProjectActionSettings({ actionVariables: values })}
+              />
+            }
+          />
+        )}
+        {target && (
+          <SettingsRow
+            title={`Environment action variables · ${environments.find((entry) => entry.environmentId === target.environmentId)?.label ?? target.environmentId}`}
+            description={
+              <>
+                Applies to this environment on this device. Available as {"{{env.sshName}}"} and
+                other named environment variables. Server defaults:{" "}
+                {JSON.stringify(representativeConfig?.environmentVariables ?? {})}
+              </>
+            }
+            control={
+              <ActionVariablesEditor
+                values={clientSettings.environmentActionVariables[target.environmentId] ?? {}}
+                onSave={(values) =>
+                  persistClientSettingsUpdate((current) => ({
+                    ...current,
+                    environmentActionVariables: {
+                      ...current.environmentActionVariables,
+                      [target.environmentId]: values,
+                    },
+                  }))
+                }
+              />
+            }
+          />
+        )}
+        {t3File.status === "invalid" ? (
+          <SettingsRow
+            title="t3.json is invalid"
+            description="A t3.json exists in this checkout but fails to parse, so every action and icon it declares is ignored. Check the JSON syntax and icon values."
+            className="text-warning"
+          />
+        ) : null}
+        <ProjectScriptEditorDialog
+          request={request}
           scripts={scripts}
-          keybindings={keybindings}
-          disabled={saving}
-          onEdit={(script) => setRequest(editorRequestForScript(script, keybindings))}
+          onSubmit={submit}
+          onDelete={(id) =>
+            void persist((current) => current.filter((script) => script.id !== id), id, null)
+          }
+          onClose={() => setRequest(null)}
         />
-      )}
-      {t3File.status === "invalid" ? (
-        <SettingsRow
-          title="t3.json is invalid"
-          description="A t3.json exists in this checkout but fails to parse, so every action and icon it declares is ignored. Check the JSON syntax and icon values."
-          className="text-warning"
-        />
-      ) : null}
-      <ProjectScriptEditorDialog
-        request={request}
-        scripts={scripts}
-        onSubmit={submit}
-        onDelete={(id) =>
-          void persist((current) => current.filter((script) => script.id !== id), id, null)
-        }
-        onClose={() => setRequest(null)}
-      />
-    </SettingsSection>
+      </SettingsSection>
+    </>
   );
 }

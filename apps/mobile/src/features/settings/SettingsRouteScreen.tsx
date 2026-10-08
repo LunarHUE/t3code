@@ -154,6 +154,7 @@ function SettingsIndexSections() {
       </SettingsSection>
 
       <SettingsSection title="Automations">
+        <SettingsRow icon="play" label="Actions" target="SettingsActions" />
         <SettingsRow icon="clock" label="Scheduled tasks" target="SettingsScheduledTasks" />
       </SettingsSection>
 

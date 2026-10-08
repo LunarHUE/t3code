@@ -25,6 +25,7 @@ export {
 } from "./terminalOutput.ts";
 
 export interface TerminalSessionState {
+  readonly shell?: string;
   readonly summary: TerminalSummary | null;
   readonly output: TerminalOutputState;
   readonly status: TerminalSessionSnapshot["status"] | "closed";
@@ -36,6 +37,7 @@ export interface TerminalSessionState {
 }
 
 export interface TerminalBufferState {
+  readonly shell?: string;
   readonly output: TerminalOutputState;
   readonly status: TerminalSessionSnapshot["status"] | "closed";
   readonly error: string | null;
@@ -102,6 +104,7 @@ function terminalBufferStateFromSnapshot(
   current: TerminalBufferState = EMPTY_TERMINAL_BUFFER_STATE,
 ): TerminalBufferState {
   return {
+    ...(snapshot.shell === undefined ? {} : { shell: snapshot.shell }),
     output: resetOutput(current.output, snapshot.history, maxBufferBytes),
     status: snapshot.status,
     error: null,
@@ -122,6 +125,7 @@ export function combineTerminalSessionState(
   buffer: TerminalBufferState,
 ): TerminalSessionState {
   return {
+    ...(buffer.shell === undefined ? {} : { shell: buffer.shell }),
     summary,
     output: buffer.output,
     status: buffer.version > 0 ? buffer.status : (summary?.status ?? buffer.status),

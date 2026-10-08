@@ -5,7 +5,11 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import type { ProviderInstanceId, SidebarProjectGroupingMode } from "@t3tools/contracts";
+import {
+  ProjectScript,
+  type ProviderInstanceId,
+  type SidebarProjectGroupingMode,
+} from "@t3tools/contracts";
 import type { ComposerEnterBehavior } from "../lib/composerEnterBehavior";
 import type { FollowUpBehavior } from "../lib/followUpBehavior";
 import { MOBILE_THEME_IDS, type MobileThemeId, type MobileThemeMode } from "../lib/mobileTheme";
@@ -17,6 +21,8 @@ const PREFERENCES_KEY = "t3code.preferences";
 const PREFERENCES_FALLBACK_KEY = "t3code.preferences.fallback";
 
 export interface Preferences {
+  readonly globalActions?: ReadonlyArray<ProjectScript>;
+  readonly environmentActionVariables?: Readonly<Record<string, Readonly<Record<string, string>>>>;
   readonly liveActivitiesEnabled?: boolean;
   readonly themeId?: MobileThemeId;
   readonly lightThemeId?: MobileThemeId;
@@ -93,6 +99,8 @@ export class MobilePreferencesStore extends Context.Service<
 
 function sanitizePreferences(parsed: Preferences): Preferences {
   const preferences: {
+    globalActions?: Preferences["globalActions"];
+    environmentActionVariables?: Preferences["environmentActionVariables"];
     liveActivitiesEnabled?: boolean;
     themeId?: MobileThemeId;
     lightThemeId?: MobileThemeId;
@@ -116,6 +124,14 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     threadListSnoozedShelfExpanded?: boolean;
     threadListWorkingShelfExpanded?: boolean;
   } = {};
+
+  if (Array.isArray(parsed.globalActions)) {
+    preferences.globalActions = parsed.globalActions.filter(Schema.is(ProjectScript));
+  }
+  const variablesSchema = Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.String));
+  if (Schema.is(variablesSchema)(parsed.environmentActionVariables)) {
+    preferences.environmentActionVariables = parsed.environmentActionVariables;
+  }
 
   if (typeof parsed.liveActivitiesEnabled === "boolean") {
     preferences.liveActivitiesEnabled = parsed.liveActivitiesEnabled;

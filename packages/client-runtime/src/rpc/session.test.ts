@@ -288,6 +288,25 @@ const publishConfigEvents = Effect.fn("TestRpcSessionFactory.publishConfigEvents
 });
 
 describe("RpcSessionFactory", () => {
+  it.effect("delivers server-advertised action variables through the config subscription", () =>
+    Effect.gen(function* () {
+      const { factory, sockets } = yield* makeFactory();
+      const session = yield* factory.connect(PREPARED);
+      const ready = yield* Effect.forkChild(session.ready);
+      const socket = yield* awaitSocket(sockets);
+      socket.open();
+      yield* completeInitialConfig(
+        socket,
+        encodeServerConfig({
+          ...SERVER_CONFIG,
+          environmentVariables: { sshName: "dev1", repoHost: "repos.example" },
+        }),
+      );
+      yield* Fiber.join(ready);
+      const config = yield* session.initialConfig;
+      expect(config.environmentVariables).toEqual({ sshName: "dev1", repoHost: "repos.example" });
+    }),
+  );
   it.effect("owns one scoped websocket attempt and exposes readiness and closure", () =>
     Effect.gen(function* () {
       const { factory, sockets } = yield* makeFactory();

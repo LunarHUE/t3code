@@ -81,6 +81,8 @@ export function ScriptIcon({
 }
 
 export interface NewProjectScriptInput {
+  id?: string;
+  kind?: "command" | "url";
   name: string;
   command: string;
   icon: ProjectScriptIcon;
@@ -97,6 +99,7 @@ export interface NewProjectScriptInput {
 export type ProjectScriptActionResult = AtomCommandResult<void, unknown>;
 
 export const EMPTY_PROJECT_SCRIPT_INPUT: NewProjectScriptInput = {
+  kind: "command",
   name: "",
   command: "",
   icon: "play",
@@ -122,6 +125,7 @@ export function editorRequestForScript(
   return {
     scriptId: script.id,
     initial: {
+      kind: script.kind ?? "command",
       name: script.name,
       command: script.command,
       icon: script.icon,
@@ -145,6 +149,8 @@ export function ProjectScriptEditorDialog({
   onSubmit,
   onDelete,
   onClose,
+  showKeybinding = true,
+  showSetup = true,
 }: {
   request: ProjectScriptEditorRequest | null;
   /** Existing scripts, used to derive a unique id for new scripts. */
@@ -155,9 +161,12 @@ export function ProjectScriptEditorDialog({
   ) => Promise<ProjectScriptActionResult>;
   onDelete: (scriptId: string) => void;
   onClose: () => void;
+  showKeybinding?: boolean;
+  showSetup?: boolean;
 }) {
   const formId = React.useId();
   const [name, setName] = useState("");
+  const [kind, setKind] = useState<"command" | "url">("command");
   const [command, setCommand] = useState("");
   const [icon, setIcon] = useState<ProjectScriptIcon>("play");
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
@@ -189,6 +198,7 @@ export function ProjectScriptEditorDialog({
   useEffect(() => {
     if (!request) return;
     setName(request.initial.name);
+    setKind(request.initial.kind ?? "command");
     setCommand(request.initial.command);
     setIcon(request.initial.icon);
     setIconPickerOpen(false);
@@ -230,7 +240,7 @@ export function ProjectScriptEditorDialog({
       return;
     }
     if (trimmedCommand.length === 0) {
-      setValidationError("Command is required.");
+      setValidationError(kind === "url" ? "URL is required." : "Command is required.");
       return;
     }
 
@@ -249,14 +259,17 @@ export function ProjectScriptEditorDialog({
       });
       const trimmedPreviewUrl = previewUrl.trim();
       payload = {
+        ...(request.initial.id ? { id: request.initial.id } : {}),
+        kind,
         name: trimmedName,
         command: trimmedCommand,
         icon,
-        runOnWorktreeCreate,
-        waitForSetup: runOnWorktreeCreate && waitForSetup,
+        runOnWorktreeCreate: kind === "command" && runOnWorktreeCreate,
+        waitForSetup: kind === "command" && runOnWorktreeCreate && waitForSetup,
         keybinding: keybindingRule?.key ?? null,
-        previewUrl: trimmedPreviewUrl.length > 0 ? trimmedPreviewUrl : null,
-        autoOpenPreview: trimmedPreviewUrl.length > 0 ? autoOpenPreview : false,
+        previewUrl: kind === "command" && trimmedPreviewUrl.length > 0 ? trimmedPreviewUrl : null,
+        autoOpenPreview:
+          kind === "command" && trimmedPreviewUrl.length > 0 ? autoOpenPreview : false,
       } satisfies NewProjectScriptInput;
     } catch (error) {
       setValidationError(error instanceof Error ? error.message : "Failed to save action.");
@@ -304,7 +317,7 @@ export function ProjectScriptEditorDialog({
           <DialogHeader>
             <DialogTitle>{isEditing ? "Edit Action" : "Add Action"}</DialogTitle>
             <DialogDescription>
-              Actions are project-scoped commands you can run from the top bar or keybindings.
+              Run a command on this environment or open a link on your device.
             </DialogDescription>
           </DialogHeader>
           <DialogPanel>
@@ -361,72 +374,102 @@ export function ProjectScriptEditorDialog({
                     />
                   </div>
                 </div>
+                {showKeybinding && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="script-keybinding">Keybinding</Label>
+                    <Input
+                      id="script-keybinding"
+                      placeholder="Press shortcut"
+                      value={keybinding}
+                      readOnly
+                      onKeyDown={captureKeybinding}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Press a shortcut. Use <code>Backspace</code> to clear. Shortcuts are
+                      environment-wide. Projects using the same action share its shortcut.
+                    </p>
+                  </div>
+                )}
                 <div className="space-y-1.5">
-                  <Label htmlFor="script-keybinding">Keybinding</Label>
-                  <Input
-                    id="script-keybinding"
-                    placeholder="Press shortcut"
-                    value={keybinding}
-                    readOnly
-                    onKeyDown={captureKeybinding}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Press a shortcut. Use <code>Backspace</code> to clear. Shortcuts are
-                    environment-wide. Projects using the same action share its shortcut.
-                  </p>
+                  <Label htmlFor="script-kind">Action type</Label>
+                  <select
+                    id="script-kind"
+                    value={kind}
+                    onChange={(event) => setKind(event.target.value === "url" ? "url" : "command")}
+                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="command">Command on environment</option>
+                    <option value="url">Link on this device</option>
+                  </select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="script-command">Command</Label>
+                  <Label htmlFor="script-command">{kind === "url" ? "URL" : "Command"}</Label>
                   <Textarea
                     id="script-command"
-                    placeholder="bun test"
+                    placeholder={
+                      kind === "url"
+                        ? "vscode://vscode-remote/ssh-remote+{{project.name}}.{{env.sshName}}.repos/workspace"
+                        : "bun test"
+                    }
                     value={command}
                     onChange={(event) => setCommand(event.target.value)}
                   />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="script-preview-url">Preview URL (optional)</Label>
-                  <Input
-                    id="script-preview-url"
-                    placeholder="http://localhost:5173"
-                    value={previewUrl}
-                    onChange={(event) => setPreviewUrl(event.target.value)}
-                  />
                   <p className="text-xs text-muted-foreground">
-                    Open this URL in the in-app preview when this action runs.
+                    Use template variables such as {"{{project.name}}"} or {"{{env.sshName}}"}.
+                    Unknown variables show an error when the action runs.
                   </p>
                 </div>
-                <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035]">
-                  <span>Run automatically on worktree creation</span>
-                  <Switch
-                    checked={runOnWorktreeCreate}
-                    onCheckedChange={(checked) => setRunOnWorktreeCreate(Boolean(checked))}
-                  />
-                </label>
-                <label
-                  className={`flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035] ${
-                    runOnWorktreeCreate ? "" : "opacity-60"
-                  }`}
-                >
-                  <span>Wait for it to finish before the agent starts</span>
-                  <Switch
-                    checked={waitForSetup}
-                    disabled={!runOnWorktreeCreate}
-                    onCheckedChange={(checked) => setWaitForSetup(Boolean(checked))}
-                  />
-                </label>
-                <label
-                  className={`flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035] ${
-                    previewUrl.trim().length === 0 ? "opacity-60" : ""
-                  }`}
-                >
-                  <span>Open preview automatically when this action runs</span>
-                  <Switch
-                    checked={autoOpenPreview}
-                    disabled={previewUrl.trim().length === 0}
-                    onCheckedChange={(checked) => setAutoOpenPreview(Boolean(checked))}
-                  />
-                </label>
+                {kind === "command" && (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="script-preview-url">Preview URL (optional)</Label>
+                      <Input
+                        id="script-preview-url"
+                        placeholder="http://localhost:5173"
+                        value={previewUrl}
+                        onChange={(event) => setPreviewUrl(event.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Open this URL in the in-app preview when this action runs.
+                      </p>
+                    </div>
+                    {showSetup && (
+                      <>
+                        <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035]">
+                          <span>Run automatically on worktree creation</span>
+                          <Switch
+                            checked={runOnWorktreeCreate}
+                            onCheckedChange={(checked) => setRunOnWorktreeCreate(Boolean(checked))}
+                          />
+                        </label>
+                        <label
+                          className={`flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035] ${
+                            runOnWorktreeCreate ? "" : "opacity-60"
+                          }`}
+                        >
+                          <span>Wait for it to finish before the agent starts</span>
+                          <Switch
+                            checked={waitForSetup}
+                            disabled={!runOnWorktreeCreate}
+                            onCheckedChange={(checked) => setWaitForSetup(Boolean(checked))}
+                          />
+                        </label>
+                      </>
+                    )}
+                    <label
+                      className={`flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035] ${
+                        previewUrl.trim().length === 0 ? "opacity-60" : ""
+                      }`}
+                    >
+                      <span>Open preview automatically when this action runs</span>
+                      <Switch
+                        checked={autoOpenPreview}
+                        disabled={previewUrl.trim().length === 0}
+                        onCheckedChange={(checked) => setAutoOpenPreview(Boolean(checked))}
+                      />
+                    </label>
+                  </>
+                )}
                 {validationError && <p className="text-sm text-destructive">{validationError}</p>}
               </fieldset>
             </form>

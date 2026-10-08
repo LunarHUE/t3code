@@ -4,6 +4,7 @@ import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
   resolvePreferredThreadWorktreePath,
   resolveTerminalOpenLocation,
+  resolvePendingTerminalInput,
   stagePendingTerminalLaunch,
   takePendingTerminalLaunch,
 } from "./terminalLaunchContext";
@@ -64,6 +65,41 @@ describe("resolveTerminalOpenLocation", () => {
 });
 
 describe("pending terminal launches", () => {
+  it("resolves a staged command for the actual Windows shell and refuses unsupported shells", () => {
+    const target = {
+      environmentId: EnvironmentId.make("env-windows"),
+      threadId: ThreadId.make("thread-action"),
+      terminalId: "action-terminal",
+    };
+    stagePendingTerminalLaunch({
+      target,
+      launch: {
+        cwd: "C:\\repos\\workspace",
+        worktreePath: null,
+        action: {
+          script: {
+            id: "open",
+            name: "Open project",
+            kind: "command",
+            command: "Write-Output {{project.name}}",
+            icon: "play",
+            runOnWorktreeCreate: false,
+          },
+          context: {
+            project: { id: "project", name: "a'b $x", root: "C:\\repos\\workspace" },
+            environment: { id: "env-windows", label: "Windows", os: "windows" },
+          },
+        },
+      },
+    });
+    const launch = takePendingTerminalLaunch(target)!;
+    expect(resolvePendingTerminalInput(launch, "C:\\Program Files\\PowerShell\\7\\pwsh.exe")).toBe(
+      "Write-Output 'a''b $x'\r",
+    );
+    expect(() => resolvePendingTerminalInput(launch, "cmd.exe")).toThrow("terminal shell");
+    expect(() => resolvePendingTerminalInput(launch)).toThrow("terminal shell");
+  });
+
   it("stages and consumes launch details for a specific terminal target", () => {
     const target = {
       environmentId: EnvironmentId.make("env-1"),

@@ -1690,6 +1690,7 @@ const layerWsRpc = (
 
           return {
             environment,
+            environmentVariables: environment.actionVariables ?? {},
             auth,
             cwd: config.cwd,
             keybindingsConfigPath: config.keybindingsConfigPath,

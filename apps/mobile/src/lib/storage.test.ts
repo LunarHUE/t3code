@@ -232,6 +232,51 @@ describe("mobile connection storage", () => {
     expect(fallback.updatedAt).toEqual(expect.any(Number));
   });
 
+  it("persists global actions and per-environment variables together with other preferences", async () => {
+    const globalActions = [
+      {
+        id: "editor",
+        name: "Open editor",
+        kind: "url" as const,
+        command: "vscode://vscode-remote/ssh-remote+{{project.name}}.{{env.sshName}}/workspace",
+        icon: "play" as const,
+        runOnWorktreeCreate: false,
+      },
+    ];
+    const environmentActionVariables = {
+      dev1: { sshName: "dev1", empty: "" },
+      dev2: { sshName: "dev2" },
+    };
+    await savePreferencesPatch({ baseFontSize: 18 });
+    await savePreferencesPatch({ globalActions, environmentActionVariables });
+    await expect(loadPreferences()).resolves.toEqual({
+      baseFontSize: 18,
+      globalActions,
+      environmentActionVariables,
+    });
+    await savePreferencesPatch({
+      globalActions: [],
+      environmentActionVariables: { dev2: { sshName: "dev2" } },
+    });
+    await expect(loadPreferences()).resolves.toEqual({
+      baseFontSize: 18,
+      globalActions: [],
+      environmentActionVariables: { dev2: { sshName: "dev2" } },
+    });
+  });
+
+  it("drops malformed actions and environment variables from saved preferences", async () => {
+    mocks.setPreferencesJson(
+      JSON.stringify({
+        globalActions: [{ id: "bad", kind: "other" }],
+        environmentActionVariables: { dev1: { sshName: 42 } },
+        baseFontSize: 18,
+      }),
+      1,
+    );
+    await expect(loadPreferences()).resolves.toEqual({ globalActions: [], baseFontSize: 18 });
+  });
+
   it("persists thread list shelf preferences", async () => {
     await expect(
       savePreferencesPatch({

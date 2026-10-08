@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./project-actions": {
+      "types": "./src/projectActions.ts",
+      "default": "./src/projectActions.ts"
+    },
     "./composerThreadItems": {
       "types": "./src/composerThreadItems.ts",
       "default": "./src/composerThreadItems.ts"

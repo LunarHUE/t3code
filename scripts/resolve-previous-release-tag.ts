@@ -167,10 +167,10 @@ const parseStableTag = (tag: string): StableVersion | undefined => {
 };
 
 const compareNightlyVersions = (left: NightlyVersion, right: NightlyVersion): number => {
+  if (left.date !== right.date) return left.date - right.date;
   if (left.major !== right.major) return left.major - right.major;
   if (left.minor !== right.minor) return left.minor - right.minor;
   if (left.patch !== right.patch) return left.patch - right.patch;
-  if (left.date !== right.date) return left.date - right.date;
   return left.runNumber - right.runNumber;
 };
 
@@ -178,6 +178,10 @@ const parseNightlyTag = (
   tag: string,
   channel: "nightly" | "preview" = "nightly",
 ): NightlyVersion | undefined => {
+  const datedTag = channel === "nightly" ? /^nightly-(\d{8})$/.exec(tag) : undefined;
+  if (datedTag) {
+    return { major: 0, minor: 0, patch: 0, date: Number(datedTag[1]), runNumber: 0 };
+  }
   // Accept both the current `v<semver>` format and the legacy `nightly-v<semver>`
   // format so release note diffs keep working across the tag-format transition.
   const match = new RegExp(

@@ -614,6 +614,7 @@ export type ServerDirectEndpoint = typeof ServerDirectEndpoint.Type;
 
 export const ServerConfig = Schema.Struct({
   environment: ExecutionEnvironmentDescriptor,
+  environmentVariables: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
   auth: ServerAuthDescriptor,
   cwd: TrimmedNonEmptyString,
   keybindingsConfigPath: TrimmedNonEmptyString,

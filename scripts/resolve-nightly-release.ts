@@ -15,6 +15,7 @@ export interface NightlyReleaseMetadata {
   readonly baseVersion: string;
   readonly version: string;
   readonly tag: string;
+  readonly datedTag: string;
   readonly name: string;
   readonly shortSha: string;
 }
@@ -121,6 +122,7 @@ export const resolveNightlyReleaseMetadata = (
     baseVersion,
     version,
     tag: `v${version}`,
+    datedTag: channel === "nightly" ? `nightly-${date}` : "",
     name: `T3 Code ${CHANNEL_RELEASE_LABELS[channel]} ${version} (${shortSha})`,
     shortSha,
   };
@@ -166,6 +168,7 @@ export const writeNightlyReleaseOutput = Effect.fn("writeNightlyReleaseOutput")(
     ["base_version", metadata.baseVersion],
     ["version", metadata.version],
     ["tag", metadata.tag],
+    ["dated_tag", metadata.datedTag],
     ["name", metadata.name],
     ["short_sha", metadata.shortSha],
   ] as const;

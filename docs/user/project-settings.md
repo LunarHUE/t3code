@@ -107,9 +107,7 @@ generation. The same rows edit environment defaults or project overrides dependi
 project crumb.
 
 The Project category, shown while a project is selected, holds the project's name, icon, actions,
-checkouts and removal. Actions belong to a project: editing them creates the project's own list
-on each selected environment, and reset returns to the environment's shared list. A project's
-`t3.json` actions can be imported there.
+checkouts and removal. A project's `t3.json` actions can be imported there.
 
 Settings a repository can also declare in `t3.json`, such as the workspace for new threads,
 resolve in one order: a project override, then the environment setting, then `t3.json`, then the
@@ -122,6 +120,46 @@ selected to override it there) to **Top level only** to stop at the ones the rep
 itself, or **Skip** to leave them for a setup script. It resolves in the same order as the
 workspace default: a `"worktreeSubmodules"` value in the `t3.json` of the branch being checked out
 applies when the project and environment are both on **Inherit**.
+
+## Global actions and templates
+
+Global actions are saved on this device and appear beside project actions in every environment.
+Command actions run in a terminal on the project's environment. URL actions open on your device,
+so editor links reach your locally installed editor. URL actions accept only `vscode:`,
+`vscode-insiders:`, `cursor:`, `http:`, and `https:` links, including actions imported from a repository.
+
+An action can use `{{project.name}}`, `{{project.root}}`, `{{project.id}}`,
+`{{environment.label}}`, and `{{environment.id}}`. Values are resolved when you run it.
+URL substitutions are percent-encoded; command substitutions are shell-quoted.
+An unknown variable shows an error and prevents the action from running.
+Command templates support POSIX shells and PowerShell. Place variables in ordinary arguments,
+either unquoted or inside single or double quotes. Templates using shell substitutions, special
+quoting, heredocs, or comments are refused; put complex logic in a script and pass variables as
+arguments. Command variable values cannot contain terminal control characters.
+
+Add project variables in the project's action settings, such as `sshName`, and refer to them as
+`{{project.sshName}}`. A project variable can override a built-in project value such as `name`.
+Environment variables use `{{env.sshName}}`; device-specific environment overrides take precedence
+over the defaults advertised by that environment's server.
+
+For example, define a URL action once:
+
+```text
+vscode://vscode-remote/ssh-remote+{{project.name}}.{{env.sshName}}.repos/workspace?windowId=_blank
+```
+
+With project name `abstract` and environment variable `sshName` set to `dev1`, this opens
+`abstract.dev1.repos`. To use a different alias for one project, override its `name` action variable,
+or override that action and use `{{project.sshName}}` instead.
+
+Servers advertise variables whose names begin with `T3CODE_ENV_`. Remove the prefix, lowercase the
+suffix, then camel-case underscore-separated words: `T3CODE_ENV_REPO_HOST` becomes `env.repoHost`
+and `T3CODE_ENV_SSH_NAME` becomes `env.sshName`. `T3CODE_ENV_SSHNAME` is also accepted as `env.sshName`.
+These values are visible to connected clients; use them for aliases and paths, not secrets.
+
+A project action with the same ID replaces the global action in that project. You can also hide
+a global action for a project. Action settings show these overrides and hidden actions;
+**Reset to global** removes the project replacement and makes the global action visible again.
 
 ## Worktree location
 

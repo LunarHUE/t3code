@@ -171,7 +171,7 @@ export function useProjectScriptSettings(
         ].map((script) => script.id),
       ),
     ];
-    const id = scriptId ?? nextProjectScriptId(input.name, existingIds);
+    const id = scriptId ?? input.id ?? nextProjectScriptId(input.name, existingIds);
     const next = buildProjectScript(id, input);
     return persist(
       (current) => {
@@ -182,7 +182,7 @@ export function useProjectScriptSettings(
               ? { ...script, runOnWorktreeCreate: false }
               : script,
         );
-        return scriptId === null ? [...updated, next] : updated;
+        return !current.some((script) => script.id === id) ? [...updated, next] : updated;
       },
       id,
       input.keybinding,

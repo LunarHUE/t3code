@@ -134,6 +134,8 @@ export default function ProjectScriptsControl({
   const importFileScript = async (fileScript: T3ProjectFileScript) => {
     const payload: NewProjectScriptInput = {
       name: fileScript.name,
+      kind: fileScript.kind ?? "command",
+      ...(fileScript.id ? { id: fileScript.id } : {}),
       command: fileScript.command,
       icon: fileScript.icon ?? "play",
       runOnWorktreeCreate: fileScript.runOnWorktreeCreate ?? false,

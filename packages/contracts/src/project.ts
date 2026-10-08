@@ -32,6 +32,7 @@ export type ProjectScriptIcon = typeof ProjectScriptIcon.Type;
 
 export const ProjectScript = Schema.Struct({
   id: TrimmedNonEmptyString,
+  kind: Schema.optionalKey(Schema.Literals(["command", "url"])),
   name: TrimmedNonEmptyString,
   command: TrimmedNonEmptyString,
   icon: ProjectScriptIcon,
