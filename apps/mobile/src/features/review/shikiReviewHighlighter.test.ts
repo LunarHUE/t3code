@@ -51,23 +51,29 @@ describe("highlightSourceFile", () => {
     vi.resetModules();
     const highlighter = await import("./shikiReviewHighlighter");
     const source = "const answer: number = 42;";
+    // Cold regex compilation can exhaust Shiki's 500ms tokenization budget on a busy runner.
+    // This test covers initialization, so keep its tokenization clock deterministic.
+    const clock = vi.spyOn(Date, "now").mockReturnValue(0);
+    try {
+      const highlighted = await highlighter.highlightSourceFile({
+        path: "example.ts",
+        contents: source,
+        theme: "dark",
+      });
 
-    const highlighted = await highlighter.highlightSourceFile({
-      path: "example.ts",
-      contents: source,
-      theme: "dark",
-    });
-
-    expect(
-      highlighted
-        .flat()
-        .map((token) => token.content)
-        .join(""),
-    ).toBe(source);
-    expect(highlighted.flat().some((token) => token.color !== null)).toBe(true);
-    expect(
-      await highlighter.highlightCodeSnippet({ code: source, language: "ts", theme: "dark" }),
-    ).toEqual(highlighted);
+      expect(
+        highlighted
+          .flat()
+          .map((token) => token.content)
+          .join(""),
+      ).toBe(source);
+      expect(highlighted.flat().some((token) => token.color !== null)).toBe(true);
+      expect(
+        await highlighter.highlightCodeSnippet({ code: source, language: "ts", theme: "dark" }),
+      ).toEqual(highlighted);
+    } finally {
+      clock.mockRestore();
+    }
   });
 });
 
