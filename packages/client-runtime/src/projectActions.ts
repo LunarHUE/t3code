@@ -69,10 +69,42 @@ function variableValue(name: string, context: ProjectActionContext): string {
   throw new Error(`Unknown action variable: {{${name}}}`);
 }
 
+/** Scan each template character once, including malformed or whitespace-heavy input. */
+function replaceActionVariables(
+  template: string,
+  replace: (match: string, variable: string, offset: number) => string,
+): string {
+  const parts: string[] = [];
+  let cursor = 0;
+  for (let index = 0; index < template.length; index++) {
+    if (template.startsWith("}}", index)) {
+      throw new Error("Action contains an invalid template variable.");
+    }
+    if (!template.startsWith("{{", index)) continue;
+    const start = index;
+    index += 2;
+    const variableStart = index;
+    while (index < template.length && template[index] !== "{" && template[index] !== "}") {
+      index++;
+    }
+    if (index === variableStart || !template.startsWith("}}", index)) {
+      throw new Error("Action contains an invalid template variable.");
+    }
+    const end = index + 2;
+    parts.push(
+      template.slice(cursor, start),
+      replace(template.slice(start, end), template.slice(variableStart, index), start),
+    );
+    cursor = end;
+    index = end - 1;
+  }
+  parts.push(template.slice(cursor));
+  return parts.join("");
+}
+
 /** Resolve at click time so renames, environment selection, and overrides remain current. */
 export function resolveProjectAction(action: ProjectScript, context: ProjectActionContext): string {
   const isUrl = action.kind === "url";
-  const placeholder = /\{\{\s*([^{}]+?)\s*\}\}/g;
   const hasTemplates = /\{\{/.test(action.command);
   const shellName = context.shell?.split(/[\\/]/).at(-1)?.toLowerCase();
   const powershell = shellName !== undefined && /^(pwsh|powershell)(\.exe)?$/.test(shellName);
@@ -86,9 +118,6 @@ export function resolveProjectAction(action: ProjectScript, context: ProjectActi
   ) {
     throw new Error("Cannot safely resolve action variables for this terminal shell.");
   }
-  if (/\{\{|\}\}/.test(action.command.replace(placeholder, ""))) {
-    throw new Error("Action contains an invalid template variable.");
-  }
   if (
     !isUrl &&
     hasTemplates &&
@@ -101,8 +130,8 @@ export function resolveProjectAction(action: ProjectScript, context: ProjectActi
   }
   let quote: "'" | '"' | null = null;
   let cursor = 0;
-  const resolved = action.command.replace(
-    placeholder,
+  const resolved = replaceActionVariables(
+    action.command,
     (match, variable: string, offset: number) => {
       if (!isUrl) {
         for (let index = cursor; index < offset; index++) {

@@ -105,6 +105,23 @@ describe("project actions", () => {
       }),
     ).toBe("echo '{{literal}}'");
   });
+  it.each(["{{{{", "{{{{z", "{{", "{{z"])(
+    "rejects whitespace-heavy unterminated templates starting with %s",
+    (prefix) => {
+      expect(() =>
+        resolveProjectAction(
+          action(`https://example.test/${prefix}${"\t".repeat(100_000)}`, "url"),
+          context,
+        ),
+      ).toThrow("invalid template");
+    },
+  );
+  it("resolves padded adjacent variables and rejects stray closing delimiters", () => {
+    expect(
+      resolveProjectAction(action("echo {{ \tproject.name\t }}{{ env.sshName }}"), context),
+    ).toBe("echo 'abstract''dev1'");
+    expect(() => resolveProjectAction(action("echo }}"), context)).toThrow("invalid template");
+  });
   it("quotes spaces, URL delimiters, and apostrophes in POSIX command values", () => {
     expect(
       resolveProjectAction(action("echo {{project.name}}"), {
