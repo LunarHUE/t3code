@@ -293,6 +293,11 @@ export const ChatWidth = Schema.Literals(["comfortable", "wide", "full"]);
 export type ChatWidth = typeof ChatWidth.Type;
 
 export const ClientSettingsSchema = Schema.Struct({
+  globalActions: Schema.Array(ProjectScript).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  environmentActionVariables: Schema.Record(
+    Schema.String,
+    Schema.Record(Schema.String, Schema.String),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   notificationMode: NotificationMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("off" as const)),
   ),
@@ -1132,6 +1137,8 @@ export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "worktreeSubmodules",
   "defaultAutoPull",
   "defaultProjectScripts",
+  "actionVariables",
+  "hiddenGlobalActionIds",
   "enableAgentBrowserAccess",
   "enableAgentDeviceAccess",
   "textGenerationModelSelection",
@@ -1155,6 +1162,8 @@ export type ProjectScopedServerSettingKey = (typeof PROJECT_SCOPED_SERVER_SETTIN
  * model, no dedicated writer model, never auto-settle).
  */
 export const ProjectSettingsOverrides = Schema.Struct({
+  actionVariables: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+  hiddenGlobalActionIds: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
   worktreeCleanup: Schema.optionalKey(WorktreeCleanup),
   defaultModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   defaultRuntimeMode: Schema.optionalKey(RuntimeMode),
@@ -1213,6 +1222,12 @@ export const StorageCleanupSettings = Schema.Struct({
 export type StorageCleanupSettings = typeof StorageCleanupSettings.Type;
 
 export const ServerSettings = Schema.Struct({
+  actionVariables: Schema.Record(Schema.String, Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+  hiddenGlobalActionIds: Schema.Array(TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
   worktreeCleanup: WorktreeCleanup.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   storageCleanup: StorageCleanupSettings.pipe(
     Schema.withDecodingDefault(Effect.succeed(Schema.decodeSync(StorageCleanupSettings)({}))),
@@ -1606,6 +1621,8 @@ const OpenCodeSettingsPatch = Schema.Struct({
 });
 
 export const ServerSettingsPatch = Schema.Struct({
+  actionVariables: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+  hiddenGlobalActionIds: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
   worktreeCleanup: Schema.optionalKey(
     Schema.NullOr(
       Schema.Union([
@@ -1749,6 +1766,10 @@ export const ServerSettingsPatch = Schema.Struct({
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 
 export const ClientSettingsPatch = Schema.Struct({
+  globalActions: Schema.optionalKey(Schema.Array(ProjectScript)),
+  environmentActionVariables: Schema.optionalKey(
+    Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.String)),
+  ),
   notificationMode: Schema.optionalKey(NotificationMode),
   inAppNotificationsEnabled: Schema.optionalKey(Schema.Boolean),
   diffColorScheme: Schema.optionalKey(DiffColorScheme),

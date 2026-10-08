@@ -24,6 +24,32 @@ import {
 const FOLDED_SERVER_SETTINGS = { ...DEFAULT_SERVER_SETTINGS, projectSettingsFolded: true };
 
 describe("serverSettings helpers", () => {
+  it("persists project action variables and hidden actions and removes them on reset", () => {
+    const projectId = ProjectId.make("action-project");
+    const saved = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      projectSettingsOverrides: {
+        [projectId]: {
+          actionVariables: { sshName: "alias", name: "custom" },
+          hiddenGlobalActionIds: ["editor"],
+        },
+      },
+    });
+    expect(saved.projectSettingsOverrides[projectId]).toEqual({
+      actionVariables: { sshName: "alias", name: "custom" },
+      hiddenGlobalActionIds: ["editor"],
+    });
+    const reset = applyServerSettingsPatch(saved, {
+      projectSettingsOverrides: { [projectId]: { actionVariables: { sshName: "new-alias" } } },
+    });
+    expect(reset.projectSettingsOverrides[projectId]).toEqual({
+      actionVariables: { sshName: "new-alias" },
+    });
+    expect(
+      applyServerSettingsPatch(reset, {
+        projectSettingsOverrides: { [projectId]: null },
+      }).projectSettingsOverrides[projectId],
+    ).toBeUndefined();
+  });
   it("changes a cleanup rule without replacing the machine's other rules", () => {
     const enabled = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
       storageCleanup: { worktreeAfterDays: 8, worktreeOnMerge: true, logsAfterDays: 30 },

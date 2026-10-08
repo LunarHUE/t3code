@@ -24,6 +24,19 @@ describe("ElectronShell", () => {
     writeTextMock.mockReset();
   });
 
+  it.effect("opens Cursor and VS Code Insiders action links", () =>
+    Effect.gen(function* () {
+      openExternalMock.mockResolvedValue(undefined);
+      const electronShell = yield* ElectronShell.ElectronShell;
+      const results = yield* Effect.all([
+        electronShell.openExternal("cursor://vscode-remote/ssh-remote+dev/project"),
+        electronShell.openExternal("vscode-insiders://vscode-remote/ssh-remote+dev/project"),
+      ]);
+      assert.deepEqual(results, [true, true]);
+      assert.equal(openExternalMock.mock.calls.length, 2);
+    }).pipe(Effect.provide(ElectronShell.layer)),
+  );
+
   it.effect("opens safe external URLs", () =>
     Effect.gen(function* () {
       openExternalMock.mockResolvedValue(undefined);
@@ -106,7 +119,7 @@ describe("ElectronShell", () => {
     }).pipe(Effect.provide(ElectronShell.layer)),
   );
 
-  it.effect("does not open editor URLs that mix up link shapes", () =>
+  it.effect("allows action editor schemes while retaining Zed restrictions", () =>
     Effect.gen(function* () {
       openExternalMock.mockResolvedValue(undefined);
 
@@ -116,8 +129,8 @@ describe("ElectronShell", () => {
         electronShell.openExternal("vscode://ssh/example.com/home/user/project"),
       ]);
 
-      assert.deepEqual(results, [false, false]);
-      assert.equal(openExternalMock.mock.calls.length, 0);
+      assert.deepEqual(results, [false, true]);
+      assert.equal(openExternalMock.mock.calls.length, 1);
     }).pipe(Effect.provide(ElectronShell.layer)),
   );
 
@@ -151,7 +164,7 @@ describe("ElectronShell", () => {
     }).pipe(Effect.provide(ElectronShell.layer)),
   );
 
-  it.effect("does not open non-remote editor URLs", () =>
+  it.effect("opens editor action URLs", () =>
     Effect.gen(function* () {
       openExternalMock.mockResolvedValue(undefined);
 
@@ -160,8 +173,8 @@ describe("ElectronShell", () => {
         "vscode://ms-python.python/some-command?argument=attacker",
       );
 
-      assert.equal(result, false);
-      assert.equal(openExternalMock.mock.calls.length, 0);
+      assert.equal(result, true);
+      assert.equal(openExternalMock.mock.calls.length, 1);
     }).pipe(Effect.provide(ElectronShell.layer)),
   );
 

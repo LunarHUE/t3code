@@ -1,4 +1,8 @@
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId, ProjectScript } from "@t3tools/contracts";
+import {
+  resolveProjectAction,
+  type ProjectActionContext,
+} from "@t3tools/client-runtime/project-actions";
 
 interface TerminalLocationLike {
   readonly cwd: string;
@@ -16,6 +20,7 @@ export interface PendingTerminalLaunch {
   readonly worktreePath: string | null;
   readonly env?: Record<string, string>;
   readonly initialInput?: string;
+  readonly action?: { readonly script: ProjectScript; readonly context: ProjectActionContext };
 }
 
 const pendingTerminalLaunches = new Map<string, PendingTerminalLaunch>();
@@ -33,7 +38,18 @@ export function stagePendingTerminalLaunch(input: {
     worktreePath: input.launch.worktreePath,
     env: input.launch.env ? { ...input.launch.env } : undefined,
     initialInput: input.launch.initialInput,
+    ...(input.launch.action ? { action: input.launch.action } : {}),
   });
+}
+
+/** Quote a command for the shell the server actually opened. */
+export function resolvePendingTerminalInput(
+  launch: PendingTerminalLaunch,
+  shell?: string,
+): string | undefined {
+  return launch.action
+    ? `${resolveProjectAction(launch.action.script, { ...launch.action.context, shell })}\r`
+    : launch.initialInput;
 }
 
 export function takePendingTerminalLaunch(

@@ -172,6 +172,7 @@ import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import { isElectron } from "../env";
 import { readLocalApi } from "../localApi";
+import { mergeProjectActions, resolveProjectAction } from "@t3tools/client-runtime/project-actions";
 import { useDiffPanelStore } from "../diffPanelStore";
 import {
   type ComposerSubmissionIntent,
@@ -2407,8 +2408,17 @@ export default function ChatView(props: ChatViewProps) {
     [activeProject, settings],
   );
   const activeProjectScripts = useMemo(
-    () => (activeProject ? resolveProjectScripts(settings, activeProject) : []),
-    [activeProject, settings],
+    () =>
+      activeProject
+        ? mergeProjectActions(
+            settings.globalActions,
+            resolveProjectScripts(settings, activeProject),
+            activeProjectSettings.settings.hiddenGlobalActionIds,
+          )
+            .filter((entry) => !entry.hidden)
+            .map((entry) => entry.action)
+        : [],
+    [activeProject, settings, activeProjectSettings.settings.hiddenGlobalActionIds],
   );
   // A project added by cloning exists before its files do. The draft stays
   // editable throughout; only sending waits for the clone, and a failed
@@ -4825,6 +4835,39 @@ export default function ChatView(props: ChatViewProps) {
       },
     ) => {
       if (!activeThreadId || !activeProject || !activeThread) return;
+      let resolvedCommand: string;
+      try {
+        const environment = environments.find((entry) => entry.environmentId === environmentId);
+        resolvedCommand = resolveProjectAction(script, {
+          project: {
+            id: activeProject.id,
+            name: activeProject.title,
+            root: activeProject.workspaceRoot,
+          },
+          environment: { id: environmentId, label: environment?.label ?? environmentId },
+          projectVariables: activeProjectSettings.settings.actionVariables,
+          environmentOverrides: settings.environmentActionVariables[environmentId],
+          environmentDefaults: environment?.serverConfig?.environmentVariables,
+        });
+        if (script.kind === "url") {
+          const api = readLocalApi();
+          if (!api) throw new Error("Unable to open link on this device.");
+          await api.shell.openExternal(resolvedCommand);
+          if (options?.rememberAsLastInvoked !== false) {
+            setLastInvokedScriptByProjectId((current) => ({
+              ...current,
+              [activeProject.id]: script.id,
+            }));
+          }
+          return;
+        }
+      } catch (error) {
+        setThreadError(
+          activeThreadId,
+          error instanceof Error ? error.message : "Unable to run action.",
+        );
+        return;
+      }
       if (options?.rememberAsLastInvoked !== false) {
         setLastInvokedScriptByProjectId((current) => {
           if (current[activeProject.id] === script.id) return current;
@@ -4896,12 +4939,37 @@ export default function ChatView(props: ChatViewProps) {
         return;
       }
 
+      try {
+        const environment = environments.find((entry) => entry.environmentId === environmentId);
+        resolvedCommand = resolveProjectAction(script, {
+          project: {
+            id: activeProject.id,
+            name: activeProject.title,
+            root: activeProject.workspaceRoot,
+          },
+          environment: {
+            id: environmentId,
+            label: environment?.label ?? environmentId,
+            os: environment?.serverConfig?.environment?.platform.os,
+          },
+          shell: openResult.value.shell,
+          projectVariables: activeProjectSettings.settings.actionVariables,
+          environmentOverrides: settings.environmentActionVariables[environmentId],
+          environmentDefaults: environment?.serverConfig?.environmentVariables,
+        });
+      } catch (error) {
+        setThreadError(
+          activeThreadId,
+          error instanceof Error ? error.message : "Unable to resolve action.",
+        );
+        return;
+      }
       const writeResult = await writeTerminal({
         environmentId,
         input: {
           threadId: activeThreadId,
           terminalId: targetTerminalId,
-          data: `${script.command}\r`,
+          data: `${resolvedCommand}\r`,
         },
       });
       if (writeResult._tag === "Failure") {
@@ -4934,6 +5002,9 @@ export default function ChatView(props: ChatViewProps) {
     },
     [
       activeProject,
+      activeProjectSettings.settings.actionVariables,
+      settings.environmentActionVariables,
+      environments,
       activeThread,
       activeThreadId,
       activeThreadRef,
@@ -4955,6 +5026,15 @@ export default function ChatView(props: ChatViewProps) {
   );
 
   const runProjectScriptRef = useRef(runProjectScript);
+  useEffect(() => {
+    const listener = (event: Event) => {
+      const id = (event as CustomEvent<{ id: string }>).detail.id;
+      const action = activeProjectScripts.find((script) => script.id === id);
+      if (action) void runProjectScriptRef.current(action);
+    };
+    window.addEventListener("t3code:run-project-action", listener);
+    return () => window.removeEventListener("t3code:run-project-action", listener);
+  }, [activeProjectScripts]);
   useLayoutEffect(() => {
     runProjectScriptRef.current = runProjectScript;
   }, [runProjectScript]);
@@ -5084,19 +5164,24 @@ export default function ChatView(props: ChatViewProps) {
       if (!activeProject) {
         return AsyncResult.success(undefined);
       }
-      const nextId = nextProjectScriptId(
-        input.name,
-        activeProjectScripts.map((script) => script.id),
-      );
+      const nextId =
+        input.id ??
+        nextProjectScriptId(
+          input.name,
+          activeProjectScripts.map((script) => script.id),
+        );
       const nextScript = buildProjectScript(nextId, input);
+      const projectScripts = resolveProjectScripts(settings, activeProject);
       const nextScripts = input.runOnWorktreeCreate
         ? [
-            ...activeProjectScripts.map((script) =>
-              script.runOnWorktreeCreate ? { ...script, runOnWorktreeCreate: false } : script,
-            ),
+            ...projectScripts
+              .filter((script) => script.id !== nextId)
+              .map((script) =>
+                script.runOnWorktreeCreate ? { ...script, runOnWorktreeCreate: false } : script,
+              ),
             nextScript,
           ]
-        : [...activeProjectScripts, nextScript];
+        : [...projectScripts.filter((script) => script.id !== nextId), nextScript];
 
       return persistProjectScripts({
         projectId: activeProject.id,
@@ -5107,7 +5192,7 @@ export default function ChatView(props: ChatViewProps) {
         keybindingCommand: commandForProjectScript(nextId),
       });
     },
-    [activeProject, activeProjectScripts, persistProjectScripts],
+    [activeProject, activeProjectScripts, persistProjectScripts, settings],
   );
   const updateProjectScript = useCallback(
     async (
@@ -5123,13 +5208,16 @@ export default function ChatView(props: ChatViewProps) {
       }
 
       const updatedScript = buildProjectScript(existingScript.id, input);
-      const nextScripts = activeProjectScripts.map((script) =>
+      const projectScripts = resolveProjectScripts(settings, activeProject);
+      const nextScripts = projectScripts.map((script) =>
         script.id === scriptId
           ? updatedScript
           : input.runOnWorktreeCreate
             ? { ...script, runOnWorktreeCreate: false }
             : script,
       );
+
+      if (!projectScripts.some((script) => script.id === scriptId)) nextScripts.push(updatedScript);
 
       return persistProjectScripts({
         projectId: activeProject.id,
@@ -5140,14 +5228,39 @@ export default function ChatView(props: ChatViewProps) {
         keybindingCommand: commandForProjectScript(scriptId),
       });
     },
-    [activeProject, activeProjectScripts, persistProjectScripts],
+    [activeProject, activeProjectScripts, persistProjectScripts, settings],
   );
   const deleteProjectScript = useCallback(
     async (scriptId: string): Promise<AtomCommandResult<void, unknown>> => {
       if (!activeProject) {
         return AsyncResult.success(undefined);
       }
-      const nextScripts = activeProjectScripts.filter((script) => script.id !== scriptId);
+      if (settings.globalActions.some((script) => script.id === scriptId)) {
+        return mapAtomCommandResult(
+          await updateProjectScriptSettings({
+            environmentId,
+            input: {
+              patch: {
+                projectSettingsOverrides: {
+                  [activeProject.id]: {
+                    ...settings.projectSettingsOverrides[activeProject.id],
+                    hiddenGlobalActionIds: [
+                      ...new Set([
+                        ...activeProjectSettings.settings.hiddenGlobalActionIds,
+                        scriptId,
+                      ]),
+                    ],
+                  },
+                },
+              },
+            },
+          }),
+          () => undefined,
+        );
+      }
+      const nextScripts = resolveProjectScripts(settings, activeProject).filter(
+        (script) => script.id !== scriptId,
+      );
 
       const deletedName = activeProjectScripts.find((s) => s.id === scriptId)?.name;
 
@@ -5176,7 +5289,15 @@ export default function ChatView(props: ChatViewProps) {
       }
       return result;
     },
-    [activeProject, activeProjectScripts, persistProjectScripts],
+    [
+      activeProject,
+      activeProjectScripts,
+      persistProjectScripts,
+      settings,
+      activeProjectSettings.settings.hiddenGlobalActionIds,
+      updateProjectScriptSettings,
+      environmentId,
+    ],
   );
 
   const handleRuntimeModeChange = useCallback(

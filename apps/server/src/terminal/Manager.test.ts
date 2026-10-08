@@ -682,6 +682,7 @@ it.layer(
       const snapshot = yield* manager.open(openInput());
 
       assert.equal(snapshot.status, "running");
+      expect(snapshot.shell).toBe(ptyAdapter.spawnInputs[0]?.shell);
       expect(ptyAdapter.spawnInputs).toHaveLength(1);
       expect(ptyAdapter.processes).toHaveLength(1);
     }),

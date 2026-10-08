@@ -13,6 +13,15 @@ import {
   type StaticScreenProps,
 } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useAtomValue } from "@effect/atom-react";
+import { AsyncResult } from "effect/reactivity";
+import {
+  mergeProjectActions,
+  resolveProjectAction,
+  type ProjectActionContext,
+} from "@t3tools/client-runtime/project-actions";
+import { mobilePreferencesAtom } from "../../state/preferences";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import * as Option from "effect/Option";
 import {
   DEFAULT_SERVER_SETTINGS,
@@ -25,7 +34,7 @@ import {
   projectScriptRuntimeEnv,
   resolveProjectScripts,
 } from "@t3tools/shared/projectScripts";
-import { Alert, Platform, ScrollView, View } from "react-native";
+import { Alert, Linking, Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useConnectionsReady } from "../../state/workspace";
 import { useEnvironmentShellReadiness } from "../../state/shell";
@@ -322,6 +331,8 @@ function ThreadRouteContent(
     readonly selectedThreadDetailState: ReturnType<typeof useSelectedThreadDetailState>;
   },
 ) {
+  const preferencesResult = useAtomValue(mobilePreferencesAtom);
+  const actionPreferences = AsyncResult.isSuccess(preferencesResult) ? preferencesResult.value : {};
   const { themeVariables } = useAppearancePreferences();
   const headerColor = themeVariables["--color-header"];
   const { fileInspector, layout, panes, showAuxiliaryPane, toggleAuxiliaryPane } =
@@ -728,6 +739,15 @@ function ThreadRouteContent(
     });
   }, [navigation, selectedThread, selectedThreadProject?.workspaceRoot, terminalMenuSessions]);
 
+  const projectActionSettings = useMemo(
+    () =>
+      resolveProjectSettings(
+        routeEnvironmentRuntime?.serverConfig?.settings ?? DEFAULT_SERVER_SETTINGS,
+        selectedThreadProject?.id ?? null,
+        selectedThreadProject,
+      ).settings,
+    [routeEnvironmentRuntime?.serverConfig?.settings, selectedThreadProject],
+  );
   const handleRunProjectScript = useCallback(
     async (script: ProjectScript) => {
       terminalDebugLog("project-script:press", {
@@ -742,6 +762,32 @@ function ThreadRouteContent(
           scriptId: script.id,
           reason: "no-thread-or-workspace",
         });
+        return;
+      }
+
+      const actionContext: ProjectActionContext = {
+        project: {
+          id: selectedThreadProject.id,
+          name: selectedThreadProject.title,
+          root: selectedThreadProject.workspaceRoot,
+        },
+        environment: {
+          id: selectedThread.environmentId,
+          label: selectedEnvironmentConnection?.environmentLabel ?? "Environment",
+          os: routeEnvironmentRuntime?.serverConfig?.environment.platform.os,
+        },
+        projectVariables: projectActionSettings.actionVariables,
+        environmentOverrides:
+          actionPreferences.environmentActionVariables?.[selectedThread.environmentId],
+        environmentDefaults: routeEnvironmentRuntime?.serverConfig?.environmentVariables,
+      };
+      try {
+        if (script.kind === "url") {
+          await Linking.openURL(resolveProjectAction(script, actionContext));
+          return;
+        }
+      } catch (error) {
+        Alert.alert("Could not run action", error instanceof Error ? error.message : String(error));
         return;
       }
 
@@ -773,7 +819,7 @@ function ThreadRouteContent(
           cwd,
           worktreePath: preferredWorktreePath,
           env,
-          initialInput: `${script.command}\r`,
+          action: { script, context: actionContext },
         },
       });
       terminalDebugLog("project-script:staged", {
@@ -795,6 +841,10 @@ function ThreadRouteContent(
       selectedThreadDetailWorktreePath,
       selectedThreadProject,
       terminalMenuSessions,
+      actionPreferences.environmentActionVariables,
+      routeEnvironmentRuntime?.serverConfig,
+      selectedEnvironmentConnection?.environmentLabel,
+      projectActionSettings.actionVariables,
     ],
   );
   const threadGitControlProps = {
@@ -820,10 +870,16 @@ function ThreadRouteContent(
     canOpenTerminal: Boolean(selectedThreadProject?.workspaceRoot),
     canOpenFiles: Boolean(selectedThreadProject?.workspaceRoot),
     projectScripts: selectedThreadProject
-      ? resolveProjectScripts(
-          routeEnvironmentRuntime?.serverConfig?.settings ?? DEFAULT_SERVER_SETTINGS,
-          selectedThreadProject,
+      ? mergeProjectActions(
+          actionPreferences.globalActions ?? [],
+          resolveProjectScripts(
+            routeEnvironmentRuntime?.serverConfig?.settings ?? DEFAULT_SERVER_SETTINGS,
+            selectedThreadProject,
+          ),
+          projectActionSettings.hiddenGlobalActionIds,
         )
+          .filter((entry) => !entry.hidden)
+          .map((entry) => entry.action)
       : [],
     terminalSessions: terminalMenuSessions,
     showDirectFileControl: layout.usesSplitView,

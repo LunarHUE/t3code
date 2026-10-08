@@ -26,6 +26,10 @@ const trimmedNonEmpty = (annotations: { readonly description: string }, maxLengt
 };
 
 export const T3ProjectFileScript = Schema.Struct({
+  id: Schema.optionalKey(
+    trimmedNonEmpty({ description: "Stable action id; matching a global action overrides it." }),
+  ),
+  kind: Schema.optionalKey(Schema.Literals(["command", "url"])),
   name: trimmedNonEmpty({
     description: "Display name for the script, shown in the T3 Code scripts menu.",
   }),

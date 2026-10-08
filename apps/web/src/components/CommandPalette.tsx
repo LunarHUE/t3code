@@ -97,6 +97,11 @@ import {
   ThemePreviewCircle,
 } from "./settings/ThemePreviewCircles";
 import { readLocalApi } from "../localApi";
+import { mergeProjectActions, resolveProjectAction } from "@t3tools/client-runtime/project-actions";
+import { resolveProjectScripts } from "@t3tools/shared/projectScripts";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { commandForProjectScript } from "../projectScripts";
+import { ScriptIcon } from "./projectScriptEditor";
 import { desktopLocalBackendId } from "../connection/desktopLocal";
 import { filesystemEnvironment } from "../state/filesystem";
 import { projectEnvironment } from "../state/projects";
@@ -1879,6 +1884,61 @@ function OpenCommandPaletteDialog(props: {
   ]);
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
+  const actionProject = projects.find(
+    (project) =>
+      project.id === currentProjectId && project.environmentId === currentProjectEnvironmentId,
+  );
+  const actionEnvironment = environments.find(
+    (environment) => environment.environmentId === currentProjectEnvironmentId,
+  );
+  if (actionProject && actionEnvironment?.serverConfig) {
+    const projectSettings = resolveProjectSettings(
+      actionEnvironment.serverConfig.settings,
+      actionProject.id,
+      actionProject,
+    );
+    for (const entry of mergeProjectActions(
+      clientSettings.globalActions,
+      resolveProjectScripts(actionEnvironment.serverConfig.settings, actionProject),
+      projectSettings.settings.hiddenGlobalActionIds,
+    )) {
+      if (entry.hidden || (entry.action.kind !== "url" && !activeThread)) continue;
+      const action = entry.action;
+      const command = commandForProjectScript(action.id);
+      actionItems.push({
+        kind: "action",
+        value: `project-action:${action.id}`,
+        title: action.name,
+        description: actionProject.title,
+        searchTerms: [action.name, "project action", action.command],
+        icon: <ScriptIcon icon={action.icon} className={ITEM_ICON_CLASS} />,
+        ...(command ? { shortcutCommand: command } : {}),
+        run: async () => {
+          if (action.kind === "url") {
+            const url = resolveProjectAction(action, {
+              project: {
+                id: actionProject.id,
+                name: actionProject.title,
+                root: actionProject.workspaceRoot,
+              },
+              environment: { id: actionEnvironment.environmentId, label: actionEnvironment.label },
+              projectVariables: projectSettings.settings.actionVariables,
+              environmentDefaults: actionEnvironment.serverConfig?.environmentVariables,
+              environmentOverrides:
+                clientSettings.environmentActionVariables[actionEnvironment.environmentId],
+            });
+            const api = readLocalApi();
+            if (!api) throw new Error("Unable to open link on this device.");
+            await api.shell.openExternal(url);
+          } else {
+            window.dispatchEvent(
+              new CustomEvent("t3code:run-project-action", { detail: { id: action.id } }),
+            );
+          }
+        },
+      });
+    }
+  }
 
   if (projects.length > 0) {
     const activeProjectTitle =

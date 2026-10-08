@@ -59,6 +59,7 @@ import {
 } from "./terminalBufferReplay";
 import {
   resolveTerminalOpenLocation,
+  resolvePendingTerminalInput,
   takePendingTerminalLaunch,
   type PendingTerminalLaunch,
 } from "./terminalLaunchContext";
@@ -706,16 +707,25 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
   }, [navigation, runningSession, selectedThread, shouldRedirectToRunningTerminal]);
 
   useEffect(() => {
-    const initialInput = pendingLaunch?.initialInput;
     if (
-      !initialInput ||
+      !pendingLaunch ||
+      (!pendingLaunch.initialInput && !pendingLaunch.action) ||
       !selectedThread ||
       terminal.version === 0 ||
+      terminal.status !== "running" ||
       sentInitialInputKeyRef.current === launchTargetKey
     ) {
       return;
     }
     sentInitialInputKeyRef.current = launchTargetKey;
+    let initialInput: string | undefined;
+    try {
+      initialInput = resolvePendingTerminalInput(pendingLaunch, terminal.shell);
+    } catch (cause) {
+      Alert.alert("Could not run action", cause instanceof Error ? cause.message : String(cause));
+      return;
+    }
+    if (!initialInput) return;
     void writeTerminal({
       environmentId: selectedThread.environmentId,
       input: {
@@ -726,9 +736,11 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     });
   }, [
     launchTargetKey,
-    pendingLaunch?.initialInput,
+    pendingLaunch,
     selectedThread,
     terminal.version,
+    terminal.status,
+    terminal.shell,
     terminalId,
     writeTerminal,
   ]);

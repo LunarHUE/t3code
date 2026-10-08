@@ -274,6 +274,7 @@ export interface TerminalStartInput extends TerminalOpenInput {
 }
 
 interface TerminalSessionState {
+  shell?: string;
   threadId: string;
   terminalId: string;
   cwd: string;
@@ -371,6 +372,7 @@ function terminalWireLabel(session: TerminalSessionState): string {
 
 function snapshot(session: TerminalSessionState): TerminalSessionSnapshot {
   return {
+    ...(session.shell === undefined ? {} : { shell: session.shell }),
     threadId: session.threadId,
     terminalId: session.terminalId,
     cwd: session.cwd,
@@ -2150,7 +2152,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     index = 0,
     lastError: PtyAdapter.PtySpawnError | null = null,
   ): Effect.fn.Return<
-    { process: PtyAdapter.PtyProcess; shellLabel: string },
+    { process: PtyAdapter.PtyProcess; shellLabel: string; shell: string },
     PtyAdapter.PtySpawnError
   > {
     if (index >= shellCandidates.length) {
@@ -2187,6 +2189,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       return {
         process: attempt.success,
         shellLabel: formatShellCandidate(candidate),
+        shell: candidate.shell,
       };
     }
 
@@ -2274,6 +2277,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
             const spawnResult = yield* trySpawn(shellCandidates, terminalEnv, session);
             ptyProcess = spawnResult.process;
             startedShell = spawnResult.shellLabel;
+            session.shell = spawnResult.shell;
 
             const processPid = ptyProcess.pid;
             let eventsActivated = false;

@@ -85,6 +85,24 @@ const makeServerConfig = Effect.fn(function* (baseDir: string) {
 });
 
 it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
+  it.effect("includes explicitly advertised defaults in the environment descriptor", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped();
+      const descriptor = yield* Effect.gen(function* () {
+        const environment = yield* ServerEnvironment.ServerEnvironment;
+        return yield* environment.getDescriptor;
+      }).pipe(
+        Effect.provide(layerServerEnvironment(baseDir)),
+        Effect.provideService(HostProcessEnvironment, {
+          T3CODE_ENV_SSHNAME: "dev1",
+          T3CODE_ENV_REPO_HOST: "repos.example",
+          SECRET: "private",
+        }),
+      );
+      expect(descriptor.actionVariables).toEqual({ sshName: "dev1", repoHost: "repos.example" });
+    }),
+  );
   it.effect("publishes proven install ownership only for manually updated servers", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

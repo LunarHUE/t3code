@@ -11,10 +11,9 @@ import * as Option from "effect/Option";
 
 import * as Electron from "electron";
 
-// Remote open-in-editor deep links (`vscode://vscode-remote/ssh-remote+…`,
-// `zed://ssh/<host>/<path>`) must reach the OS handler; every other non-web
-// scheme stays blocked.
+// Action editor links and remote open-in-editor links must reach the OS handler.
 const SAFE_WEB_PROTOCOLS = new Set(["http:", "https:"]);
+const ACTION_EDITOR_PROTOCOLS = new Set(["vscode:", "vscode-insiders:", "cursor:"]);
 const REMOTE_EDITOR_PROTOCOLS = new Set(
   REMOTE_CAPABLE_EDITOR_IDS.flatMap((id) => {
     const scheme = remoteSchemeForEditor(id);
@@ -42,7 +41,11 @@ export function parseSafeExternalUrl(rawUrl: unknown): Option.Option<string> {
 
   try {
     const url = new URL(rawUrl);
-    return SAFE_WEB_PROTOCOLS.has(url.protocol) || isRemoteEditorUrl(url)
+    return SAFE_WEB_PROTOCOLS.has(url.protocol) ||
+      (ACTION_EDITOR_PROTOCOLS.has(url.protocol) &&
+        url.username.length === 0 &&
+        url.password.length === 0) ||
+      isRemoteEditorUrl(url)
       ? Option.some(url.href)
       : Option.none();
   } catch {

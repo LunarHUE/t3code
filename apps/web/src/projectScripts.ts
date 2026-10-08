@@ -8,6 +8,7 @@ import * as Schema from "effect/Schema";
 const isScriptRunCommand = Schema.is(SCRIPT_RUN_COMMAND_PATTERN);
 
 export interface ProjectScriptInput {
+  readonly kind?: ProjectScript["kind"];
   readonly name: ProjectScript["name"];
   readonly command: ProjectScript["command"];
   readonly icon: ProjectScript["icon"];
@@ -20,11 +21,14 @@ export interface ProjectScriptInput {
 export function buildProjectScript(id: string, input: ProjectScriptInput): ProjectScript {
   return {
     id,
+    ...(input.kind ? { kind: input.kind } : {}),
     name: input.name,
     command: input.command,
     icon: input.icon,
-    runOnWorktreeCreate: input.runOnWorktreeCreate,
-    ...(input.runOnWorktreeCreate && input.waitForSetup ? { async: false } : {}),
+    runOnWorktreeCreate: input.kind !== "url" && input.runOnWorktreeCreate,
+    ...(input.kind !== "url" && input.runOnWorktreeCreate && input.waitForSetup
+      ? { async: false }
+      : {}),
     ...(input.previewUrl === null
       ? {}
       : {

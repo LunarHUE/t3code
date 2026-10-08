@@ -36,6 +36,31 @@ const BASE_SNAPSHOT: TerminalSessionSnapshot = {
 };
 
 describe("terminal session reducers", () => {
+  it("keeps the actual shell through attach output and changes it after restart", () => {
+    const initial = applyTerminalAttachStreamEvent(EMPTY_TERMINAL_BUFFER_STATE, {
+      type: "snapshot",
+      snapshot: { ...BASE_SNAPSHOT, shell: "/bin/bash" },
+    });
+    const output = applyTerminalAttachStreamEvent(initial, {
+      type: "output",
+      threadId: TARGET.threadId,
+      terminalId: TARGET.terminalId,
+      data: "ready",
+    });
+    expect(combineTerminalSessionState(null, output).shell).toBe("/bin/bash");
+    const restarted = applyTerminalAttachStreamEvent(output, {
+      type: "restarted",
+      threadId: TARGET.threadId,
+      terminalId: TARGET.terminalId,
+      snapshot: { ...BASE_SNAPSHOT, shell: "powershell.exe" },
+    });
+    expect(combineTerminalSessionState(null, restarted).shell).toBe("powershell.exe");
+    const olderServer = applyTerminalAttachStreamEvent(restarted, {
+      type: "snapshot",
+      snapshot: BASE_SNAPSHOT,
+    });
+    expect(combineTerminalSessionState(null, olderServer).shell).toBeUndefined();
+  });
   it("prefers live attach status over stale metadata after the attach stream starts", () => {
     const summary = applyTerminalMetadataStreamEvent([], {
       type: "snapshot",
