@@ -1,0 +1,16 @@
+# Commands the workspace parent routes to this repo's pod (see
+# LunarHUE/workspace-config CONTRACT.md, "Repo convention: .workspace/shims").
+node
+npm
+npx
+pnpm
+vp
+vpr
+python3
+make
+gcc
+g++
+cargo
+rustc
+rustfmt
+cargo-clippy

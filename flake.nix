@@ -1,5 +1,5 @@
 {
-  description = "T3 Code headless server for devcontainers on a self-hosted T3 Connect relay";
+  description = "T3 Code development environment and headless release packages";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -23,6 +23,9 @@
         f: nixpkgs.lib.genAttrs (builtins.attrNames targets) (system: f system nixpkgs.legacyPackages.${system});
     in
     {
+      devShells = forAllSystems (
+        _system: pkgs: import ./nix/devshells.nix { inherit pkgs; }
+      );
       packages = forAllSystems (
         system: pkgs:
         let
