@@ -5,7 +5,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { RelayClientEnvironmentRecord } from "@t3tools/contracts/relay";
-import { ServerIcon } from "lucide-react";
+import { EllipsisIcon, ServerIcon } from "lucide-react";
 import { useRef, useState } from "react";
 
 import {
@@ -14,8 +14,9 @@ import {
 } from "../../cloud/managedRelayState";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
-import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
+import { Collapsible, CollapsiblePanel } from "../ui/collapsible";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { toastManager } from "../ui/toast";
 import {
   ClerkUserProfilePage,
@@ -58,13 +59,29 @@ export function T3ConnectEnvironmentRow(props: {
               {linkedAtLabel(environment.linkedAt)} · {endpointLabel(environment)}
             </p>
           </div>
-          <CollapsibleTrigger
-            render={
-              <Button size="sm" variant="destructive-outline" disabled={props.mutationPending}>
-                Deregister
-              </Button>
-            }
-          />
+          <Menu>
+            <MenuTrigger
+              render={
+                <Button
+                  size="icon-xs"
+                  variant="ghost-muted"
+                  disabled={props.mutationPending}
+                  aria-label={`More actions for ${environment.label}`}
+                />
+              }
+            >
+              <EllipsisIcon />
+            </MenuTrigger>
+            <MenuPopup align="end">
+              <MenuItem
+                variant="destructive"
+                disabled={props.mutationPending}
+                onClick={() => props.onConfirmationChange(true)}
+              >
+                Deregister server…
+              </MenuItem>
+            </MenuPopup>
+          </Menu>
         </div>
 
         <CollapsiblePanel>
@@ -193,7 +210,7 @@ export function T3ConnectUserProfilePage() {
 
   return (
     <ClerkUserProfilePage
-      title="T3 Connect"
+      title="Registered environments"
       description="Environments registered to your account. Connections on this device are managed in Settings."
       action={
         <ClerkUserProfileRefreshButton

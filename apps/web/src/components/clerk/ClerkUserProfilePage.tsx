@@ -20,11 +20,11 @@ export function ClerkUserProfilePage({
 }) {
   return (
     <div className={cn("w-full min-w-0 text-foreground", className)}>
-      <header className="flex flex-col gap-3 pb-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:pr-8">
+      <header className="flex items-start justify-between gap-4 pb-4">
         <div className="min-w-0">
           <h2 className="text-base leading-6 font-semibold">{title}</h2>
           {description ? (
-            <p className="mt-1 max-w-[34rem] text-xs leading-4.5 text-muted-foreground sm:min-h-9">
+            <p className="mt-1 max-w-[34rem] text-xs leading-4.5 text-muted-foreground">
               {description}
             </p>
           ) : null}
