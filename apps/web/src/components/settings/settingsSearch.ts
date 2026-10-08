@@ -12,6 +12,7 @@ import {
 } from "./settingsScope";
 
 export type SettingsPath =
+  | "/settings/actions"
   | "/settings/projects"
   | "/settings/general"
   | "/settings/appearance"
@@ -89,6 +90,7 @@ export interface SettingsSearchAvailability {
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/projects": "Project",
   "/settings/general": "General",
+  "/settings/actions": "Actions",
   "/settings/appearance": "Appearance",
   "/settings/keybindings": "Keybindings",
   "/settings/snap-shot": "SnapShots",
@@ -788,8 +790,20 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "project-actions",
     title: "Actions",
-    to: "/settings/projects",
+    to: "/settings/actions",
     searchTerms: ["commands scripts setup run dev server checkout worktree t3.json import"],
+  },
+  {
+    id: "global-actions",
+    title: "Global actions",
+    to: "/settings/actions",
+    searchTerms: ["commands scripts device all projects override hide reset"],
+  },
+  {
+    id: "action-variables",
+    title: "Action variables",
+    to: "/settings/actions",
+    searchTerms: ["env project template nested references inheritance defaults values"],
   },
   {
     id: "environment-icon",
@@ -907,6 +921,7 @@ const SEARCH_ITEMS_BY_ID = new Map(SETTINGS_SEARCH_ITEMS.map((item) => [item.id,
 
 const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScope | null>> = {
   "/settings/projects": "project",
+  "/settings/actions": null,
   "/settings/general": null,
   "/settings/appearance": null,
   "/settings/snap-shot": null,

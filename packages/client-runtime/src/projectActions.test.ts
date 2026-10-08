@@ -3,6 +3,7 @@ import type { ProjectScript } from "@t3tools/contracts";
 import {
   mergeProjectActions,
   resolveProjectAction,
+  resolveProjectActionValue,
   validateProjectActionUrl,
   type ProjectActionContext,
 } from "./projectActions.ts";
@@ -104,6 +105,194 @@ describe("project actions", () => {
         projectVariables: { name: "{{literal}}" },
       }),
     ).toBe("echo '{{literal}}'");
+  });
+  it("expands inherited environment values through overrides and project dependencies", () => {
+    const nestedContext = {
+      ...context,
+      environmentDefaults: { host: "server", sshName: "{{env.host}}.repos" },
+      environmentOverrides: { host: "device" },
+      projectVariables: {
+        host: "project",
+        alias: "{{project.name}}.{{env.sshName}}",
+        target: "{{project.alias}}/{{project.root}}/{{environment.label}}",
+      },
+    };
+    expect(resolveProjectActionValue("{{project.target}}", nestedContext)).toBe(
+      "abstract.device.repos//repos/abstract/Development",
+    );
+    expect(resolveProjectActionValue("{{env.host}}/{{project.host}}", nestedContext)).toBe(
+      "device/project",
+    );
+    expect(
+      resolveProjectActionValue("{{env.sshName}}", {
+        ...nestedContext,
+        environmentOverrides: { host: "" },
+      }),
+    ).toBe(".repos");
+  });
+  it("uses project overrides during nested expansion", () => {
+    expect(
+      resolveProjectActionValue("{{project.target}}", {
+        ...context,
+        projectVariables: { name: "alias", target: "{{project.name}}" },
+      }),
+    ).toBe("alias");
+  });
+  it("keeps built-in metadata literal through nested expansion", () => {
+    const literalContext = {
+      ...context,
+      project: { ...context.project, name: "{{env.missing}}", root: "{{broken" },
+      environment: { ...context.environment, label: "{{project.name}}" },
+      projectVariables: { target: "{{project.name}}/{{project.root}}/{{environment.label}}" },
+    };
+    expect(resolveProjectActionValue("{{project.target}}", literalContext)).toBe(
+      "{{env.missing}}/{{broken/{{project.name}}",
+    );
+    expect(resolveProjectAction(action("echo {{project.target}}"), literalContext)).toBe(
+      "echo '{{env.missing}}/{{broken/{{project.name}}'",
+    );
+  });
+  it.each(["project.name", "environment.label"])(
+    "refuses environment dependencies on %s even when cached by a project reference",
+    (reference) => {
+      expect(() =>
+        resolveProjectActionValue(`{{${reference}}}{{env.target}}`, {
+          ...context,
+          environmentDefaults: { target: `{{${reference}}}` },
+        }),
+      ).toThrow("can only reference env.*");
+      expect(() => resolveProjectActionValue(`{{${reference}}}`, context, "environment")).toThrow(
+        "can only reference env.*",
+      );
+    },
+  );
+  it.each([
+    [{ a: "{{project.a}}" }, {}, "project.a -> project.a"],
+    [{ a: "{{project.b}}", b: "{{project.a}}" }, {}, "project.a -> project.b -> project.a"],
+    [
+      { a: "{{env.b}}" },
+      { b: "{{env.c}}", c: "{{env.b}}" },
+      "project.a -> env.b -> env.c -> env.b",
+    ],
+  ])("reports readable dependency cycles", (projectVariables, environmentDefaults, chain) => {
+    expect(() =>
+      resolveProjectActionValue("{{project.a}}", {
+        ...context,
+        projectVariables,
+        environmentDefaults,
+      }),
+    ).toThrow(chain);
+  });
+  it.each([
+    "{{env.missing}}",
+    "{{project.missing}}",
+    "{{env.typo.extra}}",
+    "{{unknown.name}}",
+    "{{env}}",
+    "{{project}}",
+    "{{environment}}",
+  ])("reports unknown nested references in %s", (value) => {
+    expect(() =>
+      resolveProjectActionValue("{{project.target}}", {
+        ...context,
+        projectVariables: { target: value },
+      }),
+    ).toThrow("Unknown action variable");
+  });
+  it.each(["{{env.host", "{{env.host}", "{{env.}}", "{{env.host{{env.host}}", "}}"])(
+    "rejects malformed nested references in %s",
+    (value) => {
+      expect(() =>
+        resolveProjectActionValue("{{project.target}}", {
+          ...context,
+          projectVariables: { target: value },
+        }),
+      ).toThrow();
+    },
+  );
+  it("escapes complete nested values once for URL, POSIX and PowerShell", () => {
+    const nestedContext = {
+      ...context,
+      environmentDefaults: { value: "a'b /$`!" },
+      projectVariables: { target: "prefix:{{env.value}}" },
+    };
+    expect(
+      resolveProjectAction(action("https://example.test/{{project.target}}", "url"), nestedContext),
+    ).toBe("https://example.test/prefix%3Aa%27b%20%2F%24%60%21");
+    expect(resolveProjectAction(action("echo {{project.target}}"), nestedContext)).toBe(
+      "echo 'prefix:a'\\''b /$`!'",
+    );
+    expect(resolveProjectAction(action('echo "{{project.target}}"'), nestedContext)).toBe(
+      'echo "prefix:a\'b /\\$\\`!"',
+    );
+    expect(
+      resolveProjectAction(action("Write-Output {{project.target}}"), {
+        ...nestedContext,
+        shell: "pwsh",
+      }),
+    ).toBe("Write-Output 'prefix:a''b /$`!'");
+    expect(
+      resolveProjectAction(action('Write-Output "{{project.target}}"'), {
+        ...nestedContext,
+        shell: "pwsh",
+      }),
+    ).toBe('Write-Output "prefix:a\'b /`$``!"');
+  });
+  it("rejects controls reached through nested values", () => {
+    expect(() =>
+      resolveProjectAction(action("echo {{project.target}}"), {
+        ...context,
+        projectVariables: { target: "{{env.value}}" },
+        environmentDefaults: { value: "a\nb" },
+      }),
+    ).toThrow("terminal control characters");
+  });
+  it("bounds recursive depth", () => {
+    const projectVariables = Object.fromEntries(
+      Array.from({ length: 65 }, (_, index) => [
+        `v${index}`,
+        index === 64 ? "end" : `{{project.v${index + 1}}}`,
+      ]),
+    );
+    expect(() =>
+      resolveProjectActionValue("{{project.v0}}", { ...context, projectVariables }),
+    ).toThrow("64 levels");
+  });
+  it("bounds exponentially growing values and final encoded output", () => {
+    const projectVariables = Object.fromEntries(
+      Array.from({ length: 20 }, (_, index) => [
+        `v${index}`,
+        index === 19 ? "x" : `{{project.v${index + 1}}}{{project.v${index + 1}}}`,
+      ]),
+    );
+    expect(() =>
+      resolveProjectActionValue("{{project.v0}}", { ...context, projectVariables }),
+    ).toThrow("output limit");
+    expect(() =>
+      resolveProjectAction(action("https://example.test/{{project.value}}", "url"), {
+        ...context,
+        projectVariables: { value: "/".repeat(100_000) },
+      }),
+    ).toThrow("output limit");
+  });
+  it("bounds total expansion work across distinct dependencies", () => {
+    const projectVariables = Object.fromEntries(
+      Array.from({ length: 43 }, (_, index) => [
+        `v${index}`,
+        `{{${" ".repeat(100_000)}env.empty}}`,
+      ]),
+    );
+    projectVariables.target = Array.from(
+      { length: 43 },
+      (_, index) => `{{project.v${index}}}`,
+    ).join("");
+    expect(() =>
+      resolveProjectActionValue("{{project.target}}", {
+        ...context,
+        projectVariables,
+        environmentDefaults: { empty: "" },
+      }),
+    ).toThrow("work limit");
   });
   it.each(["{{{{", "{{{{z", "{{", "{{z"])(
     "rejects whitespace-heavy unterminated templates starting with %s",
