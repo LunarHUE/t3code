@@ -170,6 +170,20 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
     assert.include(options.settings, { showThinkingSummaries: true });
   });
 
+  it("grants access to attachments outside the state directory", () => {
+    const options = ClaudeAdapterV2.makeClaudeQueryOptions({
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      nativeThreadId: "external-attachments-thread",
+      resume: false,
+      cwd: "/workspace/project",
+      attachmentsDir: "/workspace/shared-attachments",
+    });
+    assert.deepEqual(options.additionalDirectories, [
+      "/workspace/project",
+      "/workspace/shared-attachments",
+    ]);
+  });
+
   it("preserves an explicit omitted thinking display", () => {
     const options = ClaudeAdapterV2.makeClaudeQueryOptions({
       modelSelection: CLAUDE_TEST_MODEL_SELECTION,

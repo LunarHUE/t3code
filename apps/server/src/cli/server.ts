@@ -27,7 +27,7 @@ const runServerCommand = (
   });
 
 /** Bare words can name existing directories, but must not create typo projects. */
-export const runDefaultServerCommand = (flags: CliServerFlags) =>
+export const runDefaultServerCommand = (flags: Required<CliServerFlags>) =>
   Effect.gen(function* () {
     if (Option.isSome(flags.cwd)) {
       const cwd = flags.cwd.value.trim();

@@ -24,9 +24,22 @@ const DEFAULT_TEST_MODEL_SELECTION = createModelSelection(
   "gpt-5.4-mini",
 );
 
-const layerCodexTextGenerationTest = ServerConfig.ServerConfig.layerTest(process.cwd(), {
-  prefix: "t3code-codex-text-generation-test-",
-}).pipe(Layer.provideMerge(NodeServices.layer));
+const layerCodexTextGenerationTest = Layer.effect(
+  ServerConfig.ServerConfig,
+  Effect.gen(function* () {
+    const config = yield* ServerConfig.ServerConfig;
+    const fileSystem = yield* FileSystem.FileSystem;
+    const attachmentsDir = yield* fileSystem.makeTempDirectoryScoped({
+      prefix: "t3-external-codex-images-",
+    });
+    return { ...config, attachmentsDir };
+  }),
+).pipe(
+  Layer.provide(
+    ServerConfig.layerTest(process.cwd(), { prefix: "t3code-codex-text-generation-test-" }),
+  ),
+  Layer.provideMerge(NodeServices.layer),
+);
 
 interface FakeCodexInput {
   output: string;
@@ -77,7 +90,7 @@ function makeFakeCodexBinary(dir: string, input: FakeCodexInput) {
         "for (let index = 0; index < args.length; index += 1) {",
         '  if (args[index] === "--image") {',
         "    index += 1;",
-        "    if (args[index]) seenImage = true;",
+        "    if (args[index] && NodeFS.existsSync(args[index])) seenImage = true;",
         '  } else if (args[index] === "--config") {',
         "    index += 1;",
         '    const value = args[index] ?? "";',
