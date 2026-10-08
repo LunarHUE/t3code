@@ -82,6 +82,26 @@ it.effect("keeps preview tags in their own series", () =>
   }),
 );
 
+it.effect("selects previous dated nightlies and accepts older SemVer nightly tags", () =>
+  Effect.gen(function* () {
+    assert.equal(
+      yield* resolvePreviousReleaseTag("nightly", "nightly-20260621", [
+        "v1.2.0-nightly.20260619.5",
+        "nightly-20260620",
+        "nightly-20260621",
+        "v1.2.0-preview.20260620.8",
+      ]),
+      "nightly-20260620",
+    );
+    assert.equal(
+      yield* resolvePreviousReleaseTag("nightly", "nightly-20260620", [
+        "v1.2.0-nightly.20260619.5",
+      ]),
+      "v1.2.0-nightly.20260619.5",
+    );
+  }),
+);
+
 it.effect("reports the invalid tag with its release channel", () =>
   Effect.gen(function* () {
     const error = yield* resolvePreviousReleaseTag("nightly", "v1.2.0", []).pipe(Effect.flip);

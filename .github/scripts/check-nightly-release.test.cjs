@@ -139,6 +139,18 @@ test("skips unchanged commits after the gap", async () => {
   assert.equal(await shouldReleaseNightly(options), false);
 });
 
+test("recognizes dated nightly tags and skips a second release on the same UTC day", async () => {
+  const { options, calls } = fixture({ releases: [nightly(7, { tag_name: "nightly-20260905" })] });
+  assert.equal(await shouldReleaseNightly(options), false);
+  assert.equal(calls.length, 0);
+});
+
+test("compares new commits against a dated nightly from an earlier day", async () => {
+  const { options, calls } = fixture({ releases: [nightly(24, { tag_name: "nightly-20260904" })] });
+  assert.equal(await shouldReleaseNightly(options), true);
+  assert.equal(calls[0].basehead, "nightly-20260904...new");
+});
+
 test("uses publication time, not release order or the tagged commit date", async () => {
   const { options } = fixture({
     releases: [nightly(10), nightly(1), nightly(20, { tag_name: "nightly-v0.9.0" })],
@@ -210,6 +222,18 @@ test("stable releases derive the version from legacy nightly tags", async () => 
     releases: [nightly(1, { tag_name: "nightly-v0.9.0-nightly.20260905.5" })],
   });
   assert.equal((await resolveLatestNightlyCommit(options)).version, "0.9.0");
+});
+
+test("stable releases derive a dated nightly's version from its release name", async () => {
+  const { options } = nightlyCommitFixture({
+    releases: [
+      nightly(1, {
+        tag_name: "nightly-20260905",
+        name: "T3 Code Nightly 1.2.3-nightly.20260905.12 (abcdef123456)",
+      }),
+    ],
+  });
+  assert.equal((await resolveLatestNightlyCommit(options)).version, "1.2.3");
 });
 
 test("stable releases fail without a published nightly", async () => {

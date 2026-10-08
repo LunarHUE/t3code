@@ -2,6 +2,8 @@
 name: Release
 
 on:
+  schedule:
+    - cron: "17 3 * * *"
   push:
     tags:
       - "v*.*.*"
@@ -25,7 +27,7 @@ on:
 
 # Serialize manual prereleases and stable releases separately.
 concurrency:
-  group: release-${{ (inputs.channel == 'nightly' || inputs.channel == 'preview') && 'nightly' || 'stable' }}
+  group: release-${{ (github.event_name == 'schedule' || inputs.channel == 'nightly' || inputs.channel == 'preview') && 'nightly' || 'stable' }}
   cancel-in-progress: false
 
 permissions:
@@ -47,6 +49,7 @@ jobs:
     outputs:
       ref: ${{ steps.resolve.outputs.ref }}
       nightly_version: ${{ steps.resolve.outputs.nightly_version }}
+      should_release: ${{ steps.resolve.outputs.should_release }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -64,14 +67,18 @@ jobs:
               assertCommitOnDefaultBranch,
               assertReleaseSource,
               resolveLatestNightlyCommit,
+              shouldReleaseNightly,
             } = require('./.github/scripts/check-nightly-release.cjs');
 
             const dispatchChannel = process.env.DISPATCH_CHANNEL || 'preview';
-            const releaseChannel = context.eventName === 'workflow_dispatch'
+            const releaseChannel = context.eventName === 'schedule' ? 'nightly' : context.eventName === 'workflow_dispatch'
                 ? dispatchChannel
                 : 'stable';
 
             await assertReleaseSource({ github, context, releaseChannel });
+            const shouldRelease = releaseChannel !== 'nightly' || await shouldReleaseNightly({ github, context, core });
+            core.setOutput('should_release', String(shouldRelease));
+            if (!shouldRelease) return;
 
             if (context.eventName === 'workflow_dispatch' && dispatchChannel === 'stable' && !context.payload.inputs?.version) {
               const { tag, sha, version } = await resolveLatestNightlyCommit({ github, context, core });
@@ -86,13 +93,14 @@ jobs:
   preflight:
     name: Preflight
     needs: [resolve_commit]
-    if: needs.resolve_commit.result == 'success'
+    if: needs.resolve_commit.result == 'success' && needs.resolve_commit.outputs.should_release == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:
       release_channel: ${{ steps.release_meta.outputs.release_channel }}
       version: ${{ steps.release_meta.outputs.version }}
       tag: ${{ steps.release_meta.outputs.tag }}
+      dated_tag: ${{ steps.release_meta.outputs.dated_tag }}
       release_name: ${{ steps.release_meta.outputs.name }}
       short_sha: ${{ steps.release_meta.outputs.short_sha }}
       previous_tag: ${{ steps.previous_tag.outputs.previous_tag }}
@@ -130,7 +138,7 @@ jobs:
           NIGHTLY_SHA: ${{ needs.resolve_commit.outputs.ref }}
           NIGHTLY_RUN_NUMBER: ${{ github.run_number }}
         run: |
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && "${DISPATCH_CHANNEL:-preview}" == "nightly" ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" == "schedule" || ( "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && "${DISPATCH_CHANNEL:-preview}" == "nightly" ) ]]; then
             nightly_date="$(date -u +%Y%m%d)"
 
             node scripts/resolve-nightly-release.ts \
@@ -707,6 +715,23 @@ jobs:
           body_path: ${{ needs.preflight.outputs.release_channel == 'preview' && 'release-notes.md' || '' }}
           prerelease: ${{ needs.preflight.outputs.is_prerelease }}
           make_latest: ${{ needs.preflight.outputs.make_latest }}
+          files: ${{ steps.release_files.outputs.files }}
+          fail_on_unmatched_files: true
+          token: ${{ github.token }}
+
+      # Existing electron-updater installations and CLI installers require
+      # SemVer release tags. Keep the canonical release above and expose the
+      # requested daily tag with the same binaries.
+      - name: Publish dated nightly
+        if: needs.preflight.outputs.release_channel == 'nightly'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.preflight.outputs.dated_tag }}
+          target_commitish: ${{ needs.preflight.outputs.ref }}
+          name: ${{ needs.preflight.outputs.release_name }}
+          generate_release_notes: true
+          prerelease: true
+          make_latest: false
           files: ${{ steps.release_files.outputs.files }}
           fail_on_unmatched_files: true
           token: ${{ github.token }}

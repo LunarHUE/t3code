@@ -38,7 +38,8 @@ async function assertReleaseSource({ github, context, releaseChannel }) {
   await assertCommitOnDefaultBranch({ github, context, sha: context.sha });
 }
 
-const isNightlyTag = (tag) => /^v.*-nightly\./.test(tag) || tag.startsWith("nightly-v");
+const isNightlyTag = (tag) =>
+  /^nightly-\d{8}$/.test(tag) || /^v.*-nightly\./.test(tag) || tag.startsWith("nightly-v");
 
 // Newest published nightly by publication time, or undefined when none exists.
 async function findLatestNightly({ github, context }) {
@@ -58,6 +59,12 @@ async function shouldReleaseNightly({ github, context, core, now = Date.now() })
   if (!lastNightly) {
     core.info("No published nightly found. Proceeding with release.");
     return true;
+  }
+
+  const todayTag = `nightly-${new Date(now).toISOString().slice(0, 10).replaceAll("-", "")}`;
+  if (lastNightly.tag_name === todayTag) {
+    core.info(`Nightly ${todayTag} is already published. Skipping.`);
+    return false;
   }
 
   if (now - Date.parse(lastNightly.published_at) < MINIMUM_RELEASE_GAP_MS) {
@@ -93,7 +100,9 @@ async function resolveLatestNightlyCommit({ github, context, core }) {
   const tag = lastNightly.tag_name;
   // repos.getCommit dereferences annotated tags, so this is the commit either way.
   const { data: commit } = await github.rest.repos.getCommit({ ...context.repo, ref: tag });
-  const version = /^(?:nightly-)?v(\d+\.\d+\.\d+)-nightly\./.exec(tag)?.[1];
+  const version =
+    /^(?:nightly-)?v(\d+\.\d+\.\d+)-nightly\./.exec(tag)?.[1] ||
+    /^T3 Code Nightly (\d+\.\d+\.\d+)-nightly\./.exec(lastNightly.name || "")?.[1];
   if (!version) {
     throw new Error(`Cannot derive a stable version from nightly tag ${tag}.`);
   }

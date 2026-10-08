@@ -9,7 +9,7 @@ There is no Blacksmith subscription or Kubernetes/Nix runner dependency.
 - `ci.yml`: lint, typecheck, builds, web/server/package tests, native Rust checks,
   release script smoke tests, and the aggregate `Check` gate. It runs for PRs,
   main pushes, `ci/**` branches, and manual dispatches.
-- `release.yml` and `release-desktop.yml`: manual preview/nightly/stable releases
+- `release.yml` and `release-desktop.yml`: daily nightly and manual preview/nightly/stable releases
   and stable version tags. Build macOS arm64/x64, Windows arm64/x64, and Linux
   arm64/x64. Preserve updater manifests, signing support, and CLI archives.
   Windows packages embed the same-architecture Linux CLI for WSL.
@@ -20,7 +20,8 @@ There is no Blacksmith subscription or Kubernetes/Nix runner dependency.
 Delete or comment out upstream additions for Discord announcements, marketing
 or hosted web deployments, npm/AUR publishing, mobile EAS/store releases and
 screenshots, PR preview publishing, label/vouch/size bots, Cursor webhooks,
-report comments, automatic release version commits, and scheduled releases.
+report comments, automatic release version commits, and scheduled releases other
+than the desktop nightly in `release.yml`.
 Do not restore these just to resolve an upstream merge. Keep their application
 code and scripts unless a separate change removes those features.
 
@@ -59,8 +60,16 @@ rate-limit, and scheduler adapters. Axiom and mobile push remain disabled there.
 for cluster hosting. The [Cloudflare guide](../infra/relay/README.md#deployment)
 remains available if that deployment is needed later.
 
-Use upstream’s `0.0.46-nightly.<UTC date>.<workflow run>` format while testing
-the current development branch. Four-part versions such as `0.0.46.5` are not
-SemVer. Later stable releases can follow upstream’s three-part versions; our
-GitHub release feeds remain independent of upstream. Stable and nightly builds
-must come from the default branch.
+The Release workflow builds the default branch, `main`, daily at 03:17 UTC.
+It skips unchanged commits and dates with an already published nightly, and
+publishes prereleases tagged `nightly-YYYYMMDD`. A matching SemVer release keeps
+existing desktop updaters and CLI installers working. Desktop package versions keep
+the SemVer format `<next version>-nightly.<UTC date>.<workflow run>` required by
+the updater. All build and publishing jobs use GitHub-hosted runners.
+
+Dispatch Release with channel `nightly` from `main` to run it manually. Stable
+and nightly builds must come from the default branch. To test an unmerged
+branch, dispatch channel `preview` with that branch as the workflow ref;
+preview releases have separate tags and carry no updater feed. Later stable
+releases can follow upstream's three-part versions; our GitHub release feeds
+remain independent of upstream.
