@@ -27,6 +27,25 @@ const image = ChatImageAttachment.make({
 });
 
 describe("provider attachment prompts", () => {
+  it("references folded pasted text in the configured external directory", () => {
+    const text = providerMessageTextWithAttachmentPaths({
+      text: "Read the crash log as needed.",
+      attachments: [
+        ChatFileAttachment.make({
+          ...document,
+          name: "crash.txt",
+          mimeType: "text/plain",
+          source: { _tag: "pasted-text" },
+        }),
+      ],
+      attachmentsDir: "/workspace/shared-attachments",
+    });
+    assert.equal(
+      text,
+      'Read the crash log as needed.\n\n[Attached file "crash.txt" is saved at: /workspace/shared-attachments/file-document.txt]',
+    );
+  });
+
   it("appends resolvable file paths for documents and images", () => {
     assert.equal(
       providerMessageTextWithAttachmentPaths({

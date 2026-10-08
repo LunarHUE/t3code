@@ -56,6 +56,7 @@ export interface ServerDerivedPaths {
 
 export interface DeriveServerPathsOptions {
   readonly baseDirIsExplicit?: boolean;
+  readonly attachmentsDir?: string;
 }
 
 /**
@@ -133,13 +134,16 @@ export const deriveServerPaths = Effect.fn(function* (
   devUrl: ServerConfig["Service"]["devUrl"],
   options: DeriveServerPathsOptions = {},
 ): Effect.fn.Return<ServerDerivedPaths, never, Path.Path> {
-  const { join } = yield* Path.Path;
+  const { join, resolve } = yield* Path.Path;
   const stateDir = join(
     baseDir,
     devUrl !== undefined && !options.baseDirIsExplicit ? "dev" : "userdata",
   );
   const dbPath = join(stateDir, "statev2.sqlite");
-  const attachmentsDir = join(stateDir, "attachments");
+  const attachmentsDir =
+    options.attachmentsDir === undefined
+      ? join(stateDir, "attachments")
+      : resolve(options.attachmentsDir);
   const logsDir = join(stateDir, "logs");
   const providerLogsDir = join(logsDir, "provider");
   const providerStatusCacheDir = join(baseDir, "caches");

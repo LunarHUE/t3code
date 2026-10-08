@@ -1,12 +1,14 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
+import { ChatAttachmentId } from "@t3tools/contracts";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -16,6 +18,7 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { base64UrlEncode, signPayload } from "../auth/utils.ts";
 import * as ServerConfig from "../config.ts";
 import { parseThreadSegmentFromAttachmentId } from "../attachmentStore.ts";
+import { providerMessageTextWithAttachmentPaths } from "../orchestration-v2/AttachmentPrompt.ts";
 import {
   ATTACHMENT_UPLOAD_ROUTE_PREFIX,
   deletePendingAttachment,
@@ -25,7 +28,21 @@ import {
 } from "./AttachmentUpload.ts";
 
 const layerTest = ServerSecretStore.layer.pipe(
-  Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-attachment-upload-" })),
+  Layer.provideMerge(
+    Layer.effect(
+      ServerConfig.ServerConfig,
+      Effect.gen(function* () {
+        const config = yield* ServerConfig.ServerConfig;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const attachmentsDir = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-external-uploads-",
+        });
+        return { ...config, attachmentsDir };
+      }),
+    ).pipe(
+      Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-attachment-upload-" })),
+    ),
+  ),
   Layer.provideMerge(NodeServices.layer),
 );
 
@@ -49,6 +66,42 @@ const encodeLegacyAttachmentUploadClaims = Schema.encodeEffect(
 );
 
 describe("AttachmentUpload", () => {
+  it.effect("stores folded large pasted text outside state and names its readable path", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const bytes = new TextEncoder().encode("large crash log\n".repeat(20_000));
+      const metadata = {
+        type: "file" as const,
+        name: "pasted-text.txt",
+        mimeType: "text/plain",
+        sizeBytes: bytes.length,
+      };
+      const issued = yield* issueAttachmentUploadUrl(metadata);
+      const token = issued.relativeUrl.slice(`${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/`.length);
+      const claims = yield* validateAttachmentUploadToken(token);
+      if (!claims) throw new Error("Expected valid upload claims.");
+      expect(yield* storeAttachmentUpload(claims, bytes)).toEqual({ ok: true });
+      const attachmentPath = NodePath.join(config.attachmentsDir, `${issued.attachmentId}.txt`);
+      expect(NodeFS.readFileSync(attachmentPath)).toEqual(Buffer.from(bytes));
+      expect(
+        providerMessageTextWithAttachmentPaths({
+          text: "Search the crash log.",
+          attachments: [
+            {
+              ...metadata,
+              id: ChatAttachmentId.make(issued.attachmentId),
+              source: { _tag: "pasted-text" },
+            },
+          ],
+          attachmentsDir: config.attachmentsDir,
+        }),
+      ).toBe(
+        `Search the crash log.\n\n[Attached file "pasted-text.txt" is saved at: ${attachmentPath}]`,
+      );
+      expect(NodeFS.readdirSync(NodePath.join(config.stateDir, "attachments"))).toEqual([]);
+    }).pipe(Effect.provide(layerTest)),
+  );
+
   it.effect("signs the attachment metadata and validates the upload token", () =>
     Effect.gen(function* () {
       const issued = yield* issueAttachmentUploadUrl(uploadInput);
@@ -145,6 +198,11 @@ describe("AttachmentUpload", () => {
       expect(
         NodeFS.existsSync(NodePath.join(config.attachmentsDir, `${issued.attachmentId}.png`)),
       ).toBe(true);
+      expect(
+        NodeFS.existsSync(
+          NodePath.join(config.stateDir, "attachments", `${issued.attachmentId}.png`),
+        ),
+      ).toBe(false);
       expect(
         NodeFS.readdirSync(config.attachmentsDir).filter((entry) => entry.endsWith(".part")),
       ).toEqual([]);

@@ -48,9 +48,17 @@ vi.mock("node:os", async (importOriginal) => {
   return { ...actual, homedir: vi.fn(actual.homedir) };
 });
 
-const layerConfig = ServerConfig.ServerConfig.layerTest(process.cwd(), {
-  prefix: "t3-asset-access-test-",
-});
+const layerConfig = Layer.effect(
+  ServerConfig.ServerConfig,
+  Effect.gen(function* () {
+    const config = yield* ServerConfig.ServerConfig;
+    const fileSystem = yield* FileSystem.FileSystem;
+    const attachmentsDir = yield* fileSystem.makeTempDirectoryScoped({
+      prefix: "t3-external-assets-",
+    });
+    return { ...config, attachmentsDir };
+  }),
+).pipe(Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-asset-access-test-" })));
 // A PNG header is enough for the dimension read: signature, then IHDR width and height.
 const screenshotPng = new Uint8Array(24);
 screenshotPng.set([

@@ -41,6 +41,18 @@ If `t3` or `t3 start` reports an already running server, connect to that server
 instead. Stop it before starting a replacement, or use a different `--base-dir`
 for an independent server.
 
+`--base-dir` or `T3CODE_HOME` sets the T3 Code data directory, which defaults to
+`~/.t3`. To store attachments elsewhere, set `T3CODE_ATTACHMENTS_DIR` or pass
+`--attachments-dir /path/to/attachments` to `t3`, `t3 start`, or `t3 serve`.
+The flag takes precedence over the environment variable. Relative paths resolve
+from the server process's working directory, and `~` expands to its home directory.
+By default, attachments stay under the data directory, normally at
+`~/.t3/userdata/attachments`.
+
+T3 Code creates the configured attachments directory at startup. Changing this
+setting does not move existing files. Stop the server and copy the existing
+attachments into the new directory before restarting to keep them available.
+
 To try T3 Code once without installing it, run `npx t3@latest` instead (needs
 Node.js for `npx`).
 

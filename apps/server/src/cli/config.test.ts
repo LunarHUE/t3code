@@ -80,6 +80,57 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     );
   });
 
+  it.effect("resolves attachment storage from flags, environment, or the state directory", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-cli-attachments-" });
+      const absoluteDir = path.join(root, "external", "attachments");
+      const relativeDir = path.relative(process.cwd(), path.join(root, "relative", "attachments"));
+      const homeDir = path.relative(NodeOS.homedir(), path.join(root, "home", "attachments"));
+      for (const [name, flag, env, expected] of [
+        ["unset", undefined, undefined, undefined],
+        ["empty-env", undefined, "   ", undefined],
+        ["environment", undefined, absoluteDir, absoluteDir],
+        ["flag", absoluteDir, path.join(root, "ignored"), absoluteDir],
+        ["relative-env", undefined, relativeDir, path.resolve(relativeDir)],
+        ["relative-flag", relativeDir, undefined, path.resolve(relativeDir)],
+        ["home-env", undefined, `~/${homeDir}`, path.resolve(NodeOS.homedir(), homeDir)],
+        ["home-flag", `~/${homeDir}`, undefined, path.resolve(NodeOS.homedir(), homeDir)],
+      ] as const) {
+        const baseDir = path.join(root, name);
+        const config = yield* resolveServerConfig(
+          {
+            ...minimalWebFlags(baseDir),
+            attachmentsDir: Option.fromUndefinedOr(flag),
+            cwd: Option.some(path.join(root, "project")),
+          },
+          Option.none(),
+        ).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              NetService.layer,
+              ConfigProvider.layer(
+                ConfigProvider.fromEnv({
+                  env: env === undefined ? {} : { T3CODE_ATTACHMENTS_DIR: env },
+                }),
+              ),
+            ),
+          ),
+        );
+        expect(config.attachmentsDir).toBe(
+          expected ?? path.join(baseDir, "userdata", "attachments"),
+        );
+        expect(config.dbPath).toBe(path.join(baseDir, "userdata", "statev2.sqlite"));
+        expect((yield* fs.stat(config.attachmentsDir)).type).toBe("Directory");
+        if (expected !== undefined) {
+          expect(yield* fs.exists(path.join(baseDir, "userdata", "attachments"))).toBe(false);
+        }
+      }
+      expect(yield* fs.exists(path.join(root, "ignored"))).toBe(false);
+    }),
+  );
+
   it.effect("keeps stale records and supervised startup out of the manual launch preflight", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

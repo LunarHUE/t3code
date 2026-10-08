@@ -50,6 +50,12 @@ const devUrlFlag = Flag.String("dev-url").pipe(
   Flag.withDescription("Dev web URL to proxy/redirect to (equivalent to VITE_DEV_SERVER_URL)."),
   Flag.optional,
 );
+const attachmentsDirFlag = Flag.String("attachments-dir").pipe(
+  Flag.withDescription(
+    "Attachment storage directory; defaults to attachments under the runtime state directory (equivalent to T3CODE_ATTACHMENTS_DIR).",
+  ),
+  Flag.optional,
+);
 const noBrowserFlag = Flag.Boolean("no-browser").pipe(
   Flag.withDescription("Disable automatic browser opening."),
   Flag.optional,
@@ -130,6 +136,10 @@ const EnvServerConfig = Config.all({
   port: Config.Port("T3CODE_PORT").pipe(Config.option, Config.map(Option.getOrUndefined)),
   host: Config.String("T3CODE_HOST").pipe(Config.option, Config.map(Option.getOrUndefined)),
   t3Home: Config.String("T3CODE_HOME").pipe(Config.option, Config.map(Option.getOrUndefined)),
+  attachmentsDir: Config.String("T3CODE_ATTACHMENTS_DIR").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
   devUrl: Config.URL("VITE_DEV_SERVER_URL").pipe(Config.option, Config.map(Option.getOrUndefined)),
   devAllowedOrigins: Config.String("T3CODE_DEV_ALLOWED_ORIGINS").pipe(
     Config.withDefault(""),
@@ -187,6 +197,7 @@ const DevAuthTokenConfig = Config.Redacted("T3CODE_DEV_AUTH_TOKEN").pipe(
 );
 
 export interface CliServerFlags {
+  readonly attachmentsDir?: Option.Option<string>;
   readonly mode: Option.Option<ServerConfig.RuntimeMode>;
   readonly port: Option.Option<number>;
   readonly host: Option.Option<string>;
@@ -216,6 +227,7 @@ export const projectLocationFlags = {
 } as const;
 
 export const sharedServerCommandFlags = {
+  attachmentsDir: attachmentsDirFlag,
   mode: modeFlag,
   port: portFlag,
   host: hostFlag,
@@ -265,6 +277,7 @@ export const resolveServerConfig = (
     const fs = yield* FileSystem.FileSystem;
     const env = yield* EnvServerConfig;
     const normalizedFlags = {
+      attachmentsDir: flags.attachmentsDir ?? Option.none(),
       mode: flags.mode ?? Option.none(),
       port: flags.port ?? Option.none(),
       host: flags.host ?? Option.none(),
@@ -327,8 +340,17 @@ export const resolveServerConfig = (
     );
     const rawCwd = Option.getOrElse(normalizedFlags.cwd, () => process.cwd());
     const cwd = path.resolve(yield* expandHomePath(rawCwd.trim()));
+    const rawAttachmentsDir = Option.getOrUndefined(
+      resolveOptionPrecedence(
+        normalizedFlags.attachmentsDir,
+        Option.fromUndefinedOr(env.attachmentsDir),
+      ).pipe(Option.filter((value) => value.trim().length > 0)),
+    );
+    const attachmentsDir =
+      rawAttachmentsDir === undefined ? undefined : yield* expandHomePath(rawAttachmentsDir.trim());
     const derivedPaths = yield* ServerConfig.deriveServerPaths(baseDir, devUrl, {
       baseDirIsExplicit: Option.isSome(explicitBaseDir),
+      ...(attachmentsDir === undefined ? {} : { attachmentsDir }),
     });
     // An interactive CLI must not start over a discovered server. Lifetime locking
     // and supervisor handoff are separate; this preflight cannot arbitrate two starts.
