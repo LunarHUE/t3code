@@ -163,6 +163,7 @@ function layerConnectorTest(
   options?: {
     readonly links?: EnvironmentLinks.EnvironmentLinks["Service"];
     readonly allocations?: ManagedEndpointAllocations.ManagedEndpointAllocations["Service"];
+    readonly settings?: Partial<RelayConfiguration.RelayConfiguration["Service"]>;
   },
 ) {
   return EnvironmentConnector.layer.pipe(
@@ -174,7 +175,7 @@ function layerConnectorTest(
         options?.allocations ?? makeAllocations(),
       ),
     ),
-    Layer.provide(RelayConfiguration.layer(settings)),
+    Layer.provide(RelayConfiguration.layer({ ...settings, ...options?.settings })),
     Layer.provide(Layer.succeed(HttpClient.HttpClient, HttpClient.make(execute))),
   );
 }
@@ -235,6 +236,40 @@ function makeLinks(
     setHoldWebhooksWhileOffline: () => Effect.void,
     revokeForUser: () => Effect.succeed(false),
   };
+}
+
+/**
+ * A health endpoint that answers each request after the next scripted delay.
+ * `probe` advances the test clock by that delay, so a delay past the health
+ * timeout makes the probe time out.
+ */
+function makeSlowHealthEndpoint(delaysMs: ReadonlyArray<number>) {
+  let calls = 0;
+  let requestStarted = Deferred.makeUnsafe<void>();
+  const execute = (request: HttpClientRequest.HttpClientRequest) =>
+    Effect.gen(function* () {
+      const delayMs = delaysMs[calls++] ?? 0;
+      yield* Deferred.succeed(requestStarted, undefined);
+      yield* Effect.sleep(Duration.millis(delayMs));
+      return HttpClientResponse.fromWeb(
+        request,
+        Response.json(signHealthResponse(decodeHealthRequestBody(requestBodyText(request))), {
+          status: 200,
+        }),
+      );
+    });
+  const probe = Effect.gen(function* () {
+    const delayMs = delaysMs[calls] ?? 0;
+    requestStarted = Deferred.makeUnsafe<void>();
+    const connector = yield* EnvironmentConnector.EnvironmentConnector;
+    const fiber = yield* connector
+      .status({ userId: "user_123", environmentId: "env-connector-test" })
+      .pipe(Effect.forkScoped);
+    yield* Deferred.await(requestStarted);
+    yield* TestClock.adjust(Duration.millis(delayMs));
+    return yield* Fiber.join(fiber);
+  });
+  return { execute, probe };
 }
 
 describe("EnvironmentConnector", () => {
@@ -826,6 +861,123 @@ describe("EnvironmentConnector", () => {
     }).pipe(Effect.provide(layerConnectorTest(execute)));
   });
 
+  it.effect("waits out a 12s health probe under the default timeout", () => {
+    const endpoint = makeSlowHealthEndpoint([12_000]);
+    return Effect.gen(function* () {
+      expect(yield* endpoint.probe).toMatchObject({ status: "online" });
+    }).pipe(Effect.provide(Layer.merge(TestClock.layer(), layerConnectorTest(endpoint.execute))));
+  });
+
+  it.effect("times out a 12s health probe at a configured 5000ms", () => {
+    const endpoint = makeSlowHealthEndpoint([12_000]);
+    return Effect.gen(function* () {
+      expect(yield* endpoint.probe).toMatchObject({
+        status: "offline",
+        error:
+          "Managed endpoint health request timed out after 5000ms (RELAY_ENDPOINT_HEALTH_TIMEOUT_MS).",
+      });
+    }).pipe(
+      Effect.provide(
+        Layer.merge(
+          TestClock.layer(),
+          layerConnectorTest(endpoint.execute, { settings: { endpointHealthTimeoutMs: 5_000 } }),
+        ),
+      ),
+    );
+  });
+
+  it.effect("reports offline only after consecutive failed health probes", () => {
+    const fast = 1_000;
+    const slow = 40_000;
+    const endpoint = makeSlowHealthEndpoint([fast, slow, fast, slow, slow, fast]);
+    return Effect.gen(function* () {
+      const statuses: Array<string> = [];
+      for (let probe = 0; probe < 6; probe++) {
+        statuses.push((yield* endpoint.probe).status);
+      }
+      // One slow probe is held online, two in a row report offline, and one
+      // good probe recovers.
+      expect(statuses).toEqual(["online", "online", "online", "online", "offline", "online"]);
+    }).pipe(Effect.provide(Layer.merge(TestClock.layer(), layerConnectorTest(endpoint.execute))));
+  });
+
+  it.effect("reports a released tunnel offline on the first failed probe", () => {
+    let calls = 0;
+    const execute = (request: HttpClientRequest.HttpClientRequest) =>
+      Effect.sync(() =>
+        calls++ === 0
+          ? HttpClientResponse.fromWeb(
+              request,
+              Response.json(signHealthResponse(decodeHealthRequestBody(requestBodyText(request))), {
+                status: 200,
+              }),
+            )
+          : HttpClientResponse.fromWeb(request, new Response(null, { status: 502 })),
+      );
+    let released = false;
+    const allocations = makeAllocations();
+    const releasingAllocations = {
+      ...allocations,
+      get: (input: Parameters<typeof allocations.get>[0]) =>
+        allocations
+          .get(input)
+          .pipe(
+            Effect.map((allocation) =>
+              allocation && released
+                ? { ...allocation, tunnelReleasedAt: "2026-05-26T00:00:00.000Z" }
+                : allocation,
+            ),
+          ),
+    };
+
+    return Effect.gen(function* () {
+      const connector = yield* EnvironmentConnector.EnvironmentConnector;
+      const input = { userId: "user_123", environmentId: "env-connector-test" };
+      expect((yield* connector.status(input)).status).toBe("online");
+      released = true;
+      expect(yield* connector.status(input)).toMatchObject({
+        status: "offline",
+        offlineReason: "tunnel_released",
+      });
+    }).pipe(Effect.provide(layerConnectorTest(execute, { allocations: releasingAllocations })));
+  });
+
+  it.effect("counts overlapping timed-out probes as one failure", () => {
+    let healthCalls = 0;
+    let hungRequests = 0;
+    const bothHung = Deferred.makeUnsafe<void>();
+    const execute = (request: HttpClientRequest.HttpClientRequest) =>
+      healthCalls++ === 0
+        ? Effect.sync(() =>
+            HttpClientResponse.fromWeb(
+              request,
+              Response.json(signHealthResponse(decodeHealthRequestBody(requestBodyText(request))), {
+                status: 200,
+              }),
+            ),
+          )
+        : Effect.suspend(() =>
+            ++hungRequests === 2 ? Deferred.succeed(bothHung, undefined) : Effect.void,
+          ).pipe(
+            Effect.andThen(Effect.never as Effect.Effect<HttpClientResponse.HttpClientResponse>),
+          );
+
+    return Effect.gen(function* () {
+      const connector = yield* EnvironmentConnector.EnvironmentConnector;
+      const input = { userId: "user_123", environmentId: "env-connector-test" };
+      expect((yield* connector.status(input)).status).toBe("online");
+      // Two clients polling during one stall must not add up to two failures.
+      const first = yield* connector.status(input).pipe(Effect.forkScoped);
+      const second = yield* connector.status(input).pipe(Effect.forkScoped);
+      yield* Deferred.await(bothHung);
+      yield* TestClock.adjust(
+        Duration.millis(RelayConfiguration.DEFAULT_ENDPOINT_HEALTH_TIMEOUT_MS),
+      );
+      expect((yield* Fiber.join(first)).status).toBe("online");
+      expect((yield* Fiber.join(second)).status).toBe("online");
+    }).pipe(Effect.provide(Layer.merge(TestClock.layer(), layerConnectorTest(execute))));
+  });
+
   it.effect("times out hung managed endpoint mint requests", () => {
     let resolveRequestStarted: (() => void) | undefined;
     const requestStarted = new Promise<void>((resolve) => {
@@ -847,9 +999,7 @@ describe("EnvironmentConnector", () => {
         .pipe(Effect.result, Effect.forkScoped);
 
       yield* Effect.promise(() => requestStarted);
-      yield* TestClock.adjust(
-        Duration.millis(EnvironmentConnector.ENVIRONMENT_MINT_REQUEST_TIMEOUT_MS),
-      );
+      yield* TestClock.adjust(Duration.millis(10_000));
       const result = yield* Fiber.join(resultFiber);
 
       expect(Result.isFailure(result)).toBe(true);
@@ -857,9 +1007,17 @@ describe("EnvironmentConnector", () => {
         expect(result.failure._tag).toBe("EnvironmentMintRequestTimedOut");
         expect(result.failure).toMatchObject({
           environmentId: "env-connector-test",
-          timeoutMs: EnvironmentConnector.ENVIRONMENT_MINT_REQUEST_TIMEOUT_MS,
+          timeoutMs: 10_000,
         });
       }
-    }).pipe(Effect.provide(Layer.merge(TestClock.layer(), layerConnectorTest(execute))));
+    }).pipe(
+      Effect.provide(
+        Layer.merge(
+          TestClock.layer(),
+          // The health timeout must not stretch the mint timeout.
+          layerConnectorTest(execute, { settings: { endpointHealthTimeoutMs: 60_000 } }),
+        ),
+      ),
+    );
   });
 });

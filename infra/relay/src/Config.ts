@@ -1,4 +1,5 @@
 import * as Config from "effect/Config";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -47,6 +48,48 @@ export const legacyTunnelGraceMinutesConfig = Config.option(
   ),
 );
 
+const boundedIntegerConfig = (
+  name: string,
+  options: { readonly minimum: number; readonly maximum: number; readonly fallback: number },
+) =>
+  Config.String(name).pipe(
+    Config.mapEffect((raw) => {
+      const value = Number(raw.trim());
+      return raw.trim() !== "" &&
+        Number.isInteger(value) &&
+        value >= options.minimum &&
+        value <= options.maximum
+        ? Effect.succeed(value)
+        : Effect.fail(
+            new Config.ConfigError(
+              new ConfigProvider.SourceError({
+                message: `${name} must be an integer from ${options.minimum} to ${options.maximum}, got '${raw}'.`,
+              }),
+            ),
+          );
+    }),
+    // Applies only when the variable is unset; an invalid value still fails startup.
+    Config.withDefault(options.fallback),
+  );
+
+export const ENDPOINT_HEALTH_TIMEOUT_ENV = "RELAY_ENDPOINT_HEALTH_TIMEOUT_MS";
+export const DEFAULT_ENDPOINT_HEALTH_TIMEOUT_MS = 30_000;
+export const ENDPOINT_HEALTH_FAILURE_THRESHOLD_ENV = "RELAY_ENDPOINT_HEALTH_FAILURE_THRESHOLD";
+export const DEFAULT_ENDPOINT_HEALTH_FAILURE_THRESHOLD = 2;
+
+/** How long one health probe of a managed endpoint may take before it counts as failed. */
+export const endpointHealthTimeoutMsConfig = boundedIntegerConfig(ENDPOINT_HEALTH_TIMEOUT_ENV, {
+  minimum: 1_000,
+  maximum: 120_000,
+  fallback: DEFAULT_ENDPOINT_HEALTH_TIMEOUT_MS,
+});
+
+/** Consecutive failed probes before an environment that was online is reported offline. */
+export const endpointHealthFailureThresholdConfig = boundedIntegerConfig(
+  ENDPOINT_HEALTH_FAILURE_THRESHOLD_ENV,
+  { minimum: 1, maximum: 10, fallback: DEFAULT_ENDPOINT_HEALTH_FAILURE_THRESHOLD },
+);
+
 export interface ApnsCredentials {
   readonly teamId: string;
   readonly keyId: string;
@@ -92,6 +135,10 @@ export class RelayConfiguration extends Context.Service<
     readonly legacyManagedEndpointCleanupMode?: ManagedEndpointCleanupMode;
     /** Canary-only override of the legacy grace period; ignored on prod. */
     readonly legacyTunnelGraceMinutes?: number;
+    /** Defaults to DEFAULT_ENDPOINT_HEALTH_TIMEOUT_MS. */
+    readonly endpointHealthTimeoutMs?: number;
+    /** Defaults to DEFAULT_ENDPOINT_HEALTH_FAILURE_THRESHOLD. */
+    readonly endpointHealthFailureThreshold?: number;
   }
 >()("t3code-relay/Config/RelayConfiguration") {}
 

@@ -198,6 +198,9 @@ export const layer = Api.make(
     const legacyTunnelGraceMinutes = Option.getOrUndefined(
       yield* RelayConfiguration.legacyTunnelGraceMinutesConfig,
     );
+    const endpointHealthTimeoutMs = yield* RelayConfiguration.endpointHealthTimeoutMsConfig;
+    const endpointHealthFailureThreshold =
+      yield* RelayConfiguration.endpointHealthFailureThresholdConfig;
     // Keys are endpoint keys or hashes over them, which already differ per
     // stage, so stages sharing an account cannot collide in these namespaces.
     const hookRateLimit = yield* Cloudflare.RateLimit("HOOK_RATE_LIMIT", {
@@ -237,6 +240,8 @@ export const layer = Api.make(
         managedEndpointCleanupMode,
         legacyManagedEndpointCleanupMode,
         ...(legacyTunnelGraceMinutes === undefined ? {} : { legacyTunnelGraceMinutes }),
+        endpointHealthTimeoutMs,
+        endpointHealthFailureThreshold,
       });
     });
 

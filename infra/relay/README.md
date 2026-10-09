@@ -95,6 +95,25 @@ A pinned entry wins over a claimed URL. Hosts with a pinned entry set
 `T3CODE_RELAY_PRIVATE_NETWORK=true` so `t3 connect` skips installing
 cloudflared. Setting `T3CODE_RELAY_PRIVATE_URL` also skips it.
 
+### Environment health probes
+
+Clients ask the relay whether an environment is online, and the relay probes the
+environment's health endpoint to answer. Two settings tune this for hosts with
+slow disks or heavy I/O:
+
+- `RELAY_ENDPOINT_HEALTH_TIMEOUT_MS` (default `30000`, allowed `1000`-`120000`)
+  is how long one probe may take.
+- `RELAY_ENDPOINT_HEALTH_FAILURE_THRESHOLD` (default `2`, allowed `1`-`10`) is
+  how many consecutive probes must fail before an environment that was online is
+  reported offline. One successful probe reports it online again. A relay
+  process that has not yet seen the environment online reports the first
+  failure right away.
+
+The relay refuses to start if either value is out of range. Failure counts live
+in each relay process, so with several replicas a stall can take up to the
+threshold times the replica count to show as offline. The connect request that
+mints a credential keeps a fixed 10-second timeout.
+
 ### Cluster authentication
 
 The cluster runtime uses a single OIDC provider through an auth service hosted
