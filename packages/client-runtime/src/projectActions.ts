@@ -45,7 +45,11 @@ export function validateProjectActionUrl(value: string): string {
   return value;
 }
 
-function variableValue(name: string, context: ProjectActionContext): string {
+const maxExpandedLength = 262_144;
+const maxExpansionWork = 4_194_304;
+const maxVariableDepth = 64;
+
+function createVariableResolver(context: ProjectActionContext) {
   const builtIns: Readonly<Record<string, string>> = {
     "project.name": context.project.name,
     "project.root": context.project.root,
@@ -53,20 +57,81 @@ function variableValue(name: string, context: ProjectActionContext): string {
     "environment.label": context.environment.label,
     "environment.id": context.environment.id,
   };
-  if (!/^(project|environment|env)\.[A-Za-z][A-Za-z0-9_]*$/.test(name)) {
-    throw new Error(`Unknown action variable: {{${name}}}`);
-  }
-  const [namespace, key] = name.split(".");
-  if (namespace === "project" && key && Object.hasOwn(context.projectVariables ?? {}, key)) {
-    return context.projectVariables![key]!;
-  }
-  if (namespace === "env" && key) {
-    for (const variables of [context.environmentOverrides, context.environmentDefaults]) {
-      if (variables && Object.hasOwn(variables, key)) return variables[key]!;
+  const cache = new Map<string, string>();
+  const chain: string[] = [];
+  let work = 0;
+  function spend(length: number) {
+    work += length;
+    if (work > maxExpansionWork) {
+      throw new Error("Action variable expansion exceeds the work limit.");
     }
   }
-  if (Object.hasOwn(builtIns, name)) return builtIns[name]!;
-  throw new Error(`Unknown action variable: {{${name}}}`);
+
+  function expand(template: string, scope: "project" | "environment"): string {
+    spend(template.length);
+    return replaceActionVariables(template, (_match, variable) => {
+      const name = variable.trim();
+      // Unqualified braces in saved values are literal; dotted references must resolve.
+      if (/^[A-Za-z][A-Za-z0-9_]*$/.test(name) && !/^(project|environment|env)$/.test(name)) {
+        return _match;
+      }
+      const value = resolve(name, scope);
+      spend(value.length);
+      return value;
+    });
+  }
+
+  function resolve(name: string, scope: "project" | "environment" = "project"): string {
+    if (!/^(project|environment|env)\.[A-Za-z][A-Za-z0-9_]*$/.test(name)) {
+      throw new Error(`Unknown action variable: {{${name}}}`);
+    }
+    const [namespace, key] = name.split(".");
+    if (scope === "environment" && namespace !== "env") {
+      throw new Error(`Environment action variables can only reference env.*: {{${name}}}`);
+    }
+    if (chain.includes(name)) {
+      throw new Error(`Action variable cycle: ${[...chain, name].join(" -> ")}`);
+    }
+    if (chain.length >= maxVariableDepth) {
+      throw new Error(`Action variable expansion exceeds ${maxVariableDepth} levels: ${name}`);
+    }
+    const cached = cache.get(name);
+    if (cached !== undefined) return cached;
+    let template: string | undefined;
+    if (namespace === "project" && key && Object.hasOwn(context.projectVariables ?? {}, key)) {
+      template = context.projectVariables![key]!;
+    } else if (namespace === "env" && key) {
+      for (const variables of [context.environmentOverrides, context.environmentDefaults]) {
+        if (variables && Object.hasOwn(variables, key)) {
+          template = variables[key]!;
+          break;
+        }
+      }
+    }
+    if (template === undefined) {
+      // Metadata is data, even when a project name or path contains template delimiters.
+      if (Object.hasOwn(builtIns, name)) return builtIns[name]!;
+      throw new Error(`Unknown action variable: {{${name}}}`);
+    }
+    chain.push(name);
+    try {
+      const value = expand(template, namespace === "env" ? "environment" : "project");
+      cache.set(name, value);
+      return value;
+    } finally {
+      chain.pop();
+    }
+  }
+  return { resolve, expand };
+}
+
+/** Preview a saved variable value without shell quoting or URL encoding. Throws on invalid references. */
+export function resolveProjectActionValue(
+  template: string,
+  context: ProjectActionContext,
+  scope: "project" | "environment" = "project",
+): string {
+  return createVariableResolver(context).expand(template, scope);
 }
 
 /** Scan each template character once, including malformed or whitespace-heavy input. */
@@ -75,6 +140,14 @@ function replaceActionVariables(
   replace: (match: string, variable: string, offset: number) => string,
 ): string {
   const parts: string[] = [];
+  let length = 0;
+  function append(part: string) {
+    length += part.length;
+    if (length > maxExpandedLength) {
+      throw new Error("Action variable expansion exceeds the output limit.");
+    }
+    parts.push(part);
+  }
   let cursor = 0;
   for (let index = 0; index < template.length; index++) {
     if (template.startsWith("}}", index)) {
@@ -91,14 +164,12 @@ function replaceActionVariables(
       throw new Error("Action contains an invalid template variable.");
     }
     const end = index + 2;
-    parts.push(
-      template.slice(cursor, start),
-      replace(template.slice(start, end), template.slice(variableStart, index), start),
-    );
+    append(template.slice(cursor, start));
+    append(replace(template.slice(start, end), template.slice(variableStart, index), start));
     cursor = end;
     index = end - 1;
   }
-  parts.push(template.slice(cursor));
+  append(template.slice(cursor));
   return parts.join("");
 }
 
@@ -130,6 +201,7 @@ export function resolveProjectAction(action: ProjectScript, context: ProjectActi
   }
   let quote: "'" | '"' | null = null;
   let cursor = 0;
+  const variables = createVariableResolver(context);
   const resolved = replaceActionVariables(
     action.command,
     (match, variable: string, offset: number) => {
@@ -145,7 +217,7 @@ export function resolveProjectAction(action: ProjectScript, context: ProjectActi
         }
       }
       cursor = offset + match.length;
-      const value = variableValue(variable.trim(), context);
+      const value = variables.resolve(variable.trim());
       if (isUrl) {
         // RFC 3986 encoding also escapes punctuation encodeURIComponent leaves alone.
         return encodeURIComponent(value).replace(

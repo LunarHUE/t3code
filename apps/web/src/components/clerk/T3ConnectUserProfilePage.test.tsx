@@ -39,12 +39,12 @@ describe("T3 Connect environment row", () => {
     const markup = renderRow();
 
     expect(markup).toContain("Studio Mac");
-    expect(markup).toContain("Deregister");
+    expect(markup).toContain("More actions for Studio Mac");
     expect(markup).not.toContain("Deregister server");
     expect(markup).not.toContain("Confirm deregistration of Studio Mac");
   });
 
-  it("expands Clerk-style confirmation content beneath the environment row", () => {
+  it("expands confirmation content beneath the environment row", () => {
     const markup = renderRow({ confirmationOpen: true });
 
     expect(markup).toContain("Deregister server");

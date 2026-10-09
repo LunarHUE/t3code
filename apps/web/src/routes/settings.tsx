@@ -4,6 +4,7 @@ import { RotateCcwIcon } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { useSettingsRestore } from "../components/settings/SettingsPanels";
 
+import { ActionVariablesDraftProvider } from "../components/settings/ActionVariablesDraftContext";
 import { SettingsBreadcrumb } from "../components/settings/SettingsBreadcrumb";
 import { SidebarInset } from "../components/ui/sidebar";
 import { useNavigateToMainApp } from "../components/sidebar/mainAppLocation";
@@ -88,7 +89,11 @@ function SettingsScopeBoundary({ pathname, children }: { pathname: string; child
   }
   // Device-local pages ignore the scope entirely; the project page follows
   // remembered members while a grouping change replaces its URL key.
-  if (SETTINGS_DEVICE_ONLY_PATHS.has(pathname) || pathname === "/settings/projects") {
+  if (
+    SETTINGS_DEVICE_ONLY_PATHS.has(pathname) ||
+    pathname === "/settings/projects" ||
+    pathname === "/settings/actions"
+  ) {
     return children;
   }
   // Keep the scope sentence on screen so the selection can be changed back.
@@ -153,7 +158,7 @@ function SettingsRouteLayout() {
   return (
     <SettingsScopeProvider
       search={rawSearch}
-      singleEnvironment={pathname === "/settings/providers"}
+      singleEnvironment={pathname === "/settings/providers" || pathname === "/settings/actions"}
       onChange={(next) => {
         // Send every axis so the retain middleware sees an explicit target
         // even when the choice is "all", which is the absence of a key.
@@ -169,7 +174,9 @@ function SettingsRouteLayout() {
         });
       }}
     >
-      <SettingsContentLayout />
+      <ActionVariablesDraftProvider>
+        <SettingsContentLayout />
+      </ActionVariablesDraftProvider>
     </SettingsScopeProvider>
   );
 }

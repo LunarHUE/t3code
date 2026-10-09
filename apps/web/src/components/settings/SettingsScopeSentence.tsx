@@ -76,7 +76,52 @@ export function SettingsScopeSentence() {
         </span>
         <EnvironmentScopeMenu {...props} />
       </span>
+      {pathname === "/settings/actions" && scope.search.project ? (
+        <CheckoutScopeMenu {...props} />
+      ) : null}
     </p>
+  );
+}
+
+function CheckoutScopeMenu({ value, groups, onChange }: SettingsScopeMenuProps) {
+  const group = groups.find((candidate) => candidate.projectKey === value.project);
+  const members =
+    group?.memberProjects.filter(
+      (member) => !value.machine || member.environmentId === value.machine,
+    ) ?? [];
+  if (members.length < 2 && !value.checkout) return null;
+  const selected = members.find((member) => member.physicalProjectKey === value.checkout);
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <span className="shrink-0">in</span>
+      <ScopeMenu
+        ariaLabel="Checkout scope"
+        icon={null}
+        label={
+          selected?.workspaceRoot ?? (value.checkout ? "Unavailable checkout" : "All checkouts")
+        }
+      >
+        <MenuRadioGroup
+          value={value.checkout ?? "all"}
+          onValueChange={(next) => {
+            if (typeof next !== "string") return;
+            onChange({ ...value, checkout: next === "all" ? undefined : next });
+          }}
+        >
+          <MenuRadioItem value="all">
+            All checkouts
+            <MenuRadioItemIndicator />
+          </MenuRadioItem>
+          <MenuSeparator />
+          {members.map((member) => (
+            <MenuRadioItem key={member.physicalProjectKey} value={member.physicalProjectKey}>
+              <span className="min-w-0 truncate">{member.workspaceRoot}</span>
+              <MenuRadioItemIndicator />
+            </MenuRadioItem>
+          ))}
+        </MenuRadioGroup>
+      </ScopeMenu>
+    </span>
   );
 }
 

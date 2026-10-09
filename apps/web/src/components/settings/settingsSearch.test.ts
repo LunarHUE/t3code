@@ -365,7 +365,7 @@ describe("searchSettings", () => {
     ["new threads", "new-threads", "/settings/general"],
     ["agent browser access", "agent-browser-access", "/settings/integrations"],
     ["automatically pull", "automatic-pull", "/settings/source-control"],
-    ["actions", "project-actions", "/settings/projects"],
+    ["actions", "project-actions", "/settings/actions"],
     ["project overview", "project-overview", "/settings/projects"],
   ])("routes %s to its owning category", (query, id, to) => {
     expect(searchSettings(query)[0]).toMatchObject({ id, to });
@@ -550,5 +550,27 @@ describe("settings sidebar scope", () => {
     expect(isSettingsOverviewVisible({ machine: "remote" })).toBe(false);
     expect(isSettingsOverviewVisible({ project: "project" })).toBe(true);
     expect(isSettingsOverviewVisible({ project: "project", checkout: "checkout" })).toBe(true);
+  });
+});
+
+describe("Actions settings destinations", () => {
+  it.each(["global-actions", "project-actions", "action-variables"])(
+    "routes %s to its dedicated tab",
+    (id) => {
+      expect(SETTINGS_SEARCH_ITEMS.find((item) => item.id === id)?.to).toBe("/settings/actions");
+    },
+  );
+
+  it("finds variable settings by nested-reference and inheritance terms", () => {
+    expect(
+      searchSettings("nested references", SETTINGS_SEARCH_ITEMS).some(
+        (item) => item.id === "action-variables",
+      ),
+    ).toBe(true);
+    expect(
+      searchSettings("inheritance", SETTINGS_SEARCH_ITEMS).some(
+        (item) => item.id === "action-variables",
+      ),
+    ).toBe(true);
   });
 });

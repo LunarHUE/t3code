@@ -8,12 +8,10 @@ import { ChevronDownIcon, PlusIcon } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { useT3ProjectFileState } from "../../hooks/useT3ProjectFileScripts";
 import { useEnvironments } from "../../state/environments";
-import { useClientSettings, persistClientSettingsUpdate } from "../../hooks/useSettings";
+import { useClientSettings } from "../../hooks/useSettings";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { mergeProjectActions } from "@t3tools/client-runtime/project-actions";
-import { GlobalActionsSettings } from "./GlobalActionsSettings";
-import { ActionVariablesEditor } from "./ActionVariablesEditor";
 import { toastManager } from "../ui/toast";
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
@@ -33,6 +31,7 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "../ui/menu";
+import { resetProjectGlobalAction } from "./ProjectActionsSettings.logic";
 import { ProjectActionsList } from "./ProjectActionsList";
 import { useProjectScriptSettings } from "./useProjectScriptSettings";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
@@ -61,10 +60,16 @@ export function ProjectActionsSettings() {
     : undefined;
   const scripts = target?.settings.defaultProjectScripts ?? [];
   const hiddenIds = target?.settings.hiddenGlobalActionIds ?? [];
-  const actionEntries = mergeProjectActions(clientSettings.globalActions, scripts, hiddenIds);
+  const actionEntries = isProjectScope
+    ? mergeProjectActions(clientSettings.globalActions, scripts, hiddenIds)
+    : scripts.map((action) => ({ action, source: "project" as const, hidden: false }));
+  const canEdit =
+    targets.length > 0 &&
+    (!isProjectScope ||
+      representativeConfig?.environment.capabilities.projectSettingsOverrides === true);
   async function saveProjectActionSettings(
-    patch: { actionVariables?: Record<string, string> },
-    visibility?: { id: string; hidden: boolean },
+    visibility: { id: string; hidden: boolean },
+    resetOverride = false,
   ) {
     setVariablesSaving(true);
     try {
@@ -85,17 +90,19 @@ export function ProjectActionsSettings() {
           input: {
             patch: {
               projectSettingsOverrides: {
-                [candidate.projectId]: {
-                  ...previous,
-                  ...patch,
-                  ...(visibility
-                    ? {
-                        hiddenGlobalActionIds: visibility.hidden
-                          ? [...new Set([...hidden, visibility.id])]
-                          : hidden.filter((id) => id !== visibility.id),
-                      }
-                    : {}),
-                },
+                [candidate.projectId]: resetOverride
+                  ? resetProjectGlobalAction(
+                      previous,
+                      candidate.settings.defaultProjectScripts ?? [],
+                      candidate.settings.hiddenGlobalActionIds,
+                      visibility.id,
+                    )
+                  : {
+                      ...previous,
+                      hiddenGlobalActionIds: visibility.hidden
+                        ? [...new Set([...hidden, visibility.id])]
+                        : hidden.filter((id) => id !== visibility.id),
+                    },
               },
             },
           },
@@ -196,19 +203,22 @@ export function ProjectActionsSettings() {
         });
       }
     },
-    [submit],
+    [submit, setRequest],
   );
 
   return (
     <>
-      <GlobalActionsSettings />
       <SettingsSection id="project-actions" title="Actions">
         <SettingsRow
           serverScoped
           settingKeys={["defaultProjectScripts"]}
           mixed={mixed}
-          title="Actions"
-          description="Commands run on the environment. Links open on your device. Editing a global action here overrides it for this project."
+          title={isProjectScope ? "Project actions" : "Default project actions"}
+          description={
+            isProjectScope
+              ? "Commands run on the environment. Links open on your device. Editing a global action here overrides it for this project."
+              : "Actions inherited by projects on this environment. Commands run on the environment; links open on your device."
+          }
           onResetOverride={() => void persist(() => null)}
           control={
             <div className="flex flex-wrap items-center gap-1.5">
@@ -220,7 +230,7 @@ export function ProjectActionsSettings() {
                         id="import-scripts"
                         size="xs"
                         variant="ghost"
-                        disabled={saving}
+                        disabled={saving || !canEdit}
                         type="button"
                       />
                     }
@@ -256,7 +266,7 @@ export function ProjectActionsSettings() {
               <Button
                 size="xs"
                 variant="outline"
-                disabled={saving || targets.length === 0}
+                disabled={saving || !canEdit}
                 onClick={() => setRequest({ scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT })}
               >
                 <PlusIcon className="size-3.5" />
@@ -275,7 +285,7 @@ export function ProjectActionsSettings() {
             <ProjectActionsList
               scripts={actionEntries.filter((entry) => !entry.hidden).map((entry) => entry.action)}
               keybindings={keybindings}
-              disabled={saving}
+              disabled={saving || !canEdit}
               onEdit={(script) => setRequest(editorRequestForScript(script, keybindings))}
             />
             {isProjectScope &&
@@ -298,12 +308,12 @@ export function ProjectActionsSettings() {
                           <Button
                             size="xs"
                             variant="ghost"
-                            disabled={saving || variablesSaving}
+                            disabled={saving || variablesSaving || !canEdit}
                             onClick={() => {
-                              void saveProjectActionSettings(
-                                {},
-                                { id: entry.action.id, hidden: true },
-                              ).catch(() => undefined);
+                              void saveProjectActionSettings({
+                                id: entry.action.id,
+                                hidden: true,
+                              }).catch(() => undefined);
                             }}
                           >
                             Hide
@@ -313,19 +323,12 @@ export function ProjectActionsSettings() {
                           <Button
                             size="xs"
                             variant="outline"
-                            disabled={saving || variablesSaving}
+                            disabled={saving || variablesSaving || !canEdit}
                             onClick={() => {
-                              void (async () => {
-                                const result = await persist((current) =>
-                                  current.filter((script) => script.id !== entry.action.id),
-                                );
-                                if (result._tag === "Success") {
-                                  await saveProjectActionSettings(
-                                    {},
-                                    { id: entry.action.id, hidden: false },
-                                  );
-                                }
-                              })().catch(() => undefined);
+                              void saveProjectActionSettings(
+                                { id: entry.action.id, hidden: false },
+                                true,
+                              ).catch(() => undefined);
                             }}
                           >
                             Reset to global
@@ -336,49 +339,6 @@ export function ProjectActionsSettings() {
                   />
                 ))}
           </>
-        )}
-        {isProjectScope && (
-          <SettingsRow
-            title="Project action variables"
-            description={
-              <>
-                String values available as {"{{project.name}}"}, {"{{project.sshName}}"}, or other
-                named project variables.
-              </>
-            }
-            control={
-              <ActionVariablesEditor
-                values={target?.settings.actionVariables ?? {}}
-                onSave={(values) => saveProjectActionSettings({ actionVariables: values })}
-              />
-            }
-          />
-        )}
-        {target && (
-          <SettingsRow
-            title={`Environment action variables · ${environments.find((entry) => entry.environmentId === target.environmentId)?.label ?? target.environmentId}`}
-            description={
-              <>
-                Applies to this environment on this device. Available as {"{{env.sshName}}"} and
-                other named environment variables. Server defaults:{" "}
-                {JSON.stringify(representativeConfig?.environmentVariables ?? {})}
-              </>
-            }
-            control={
-              <ActionVariablesEditor
-                values={clientSettings.environmentActionVariables[target.environmentId] ?? {}}
-                onSave={(values) =>
-                  persistClientSettingsUpdate((current) => ({
-                    ...current,
-                    environmentActionVariables: {
-                      ...current.environmentActionVariables,
-                      [target.environmentId]: values,
-                    },
-                  }))
-                }
-              />
-            }
-          />
         )}
         {t3File.status === "invalid" ? (
           <SettingsRow

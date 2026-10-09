@@ -3,7 +3,6 @@ import { AsyncResult } from "effect/reactivity";
 import { useState } from "react";
 import { useClientSettings, persistClientSettingsUpdate } from "../../hooks/useSettings";
 import { buildProjectScript, nextProjectScriptId } from "../../projectScripts";
-import { useEnvironments } from "../../state/environments";
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
   editorRequestForScript,
@@ -12,13 +11,11 @@ import {
 } from "../projectScriptEditor";
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
-import { ActionVariablesEditor } from "./ActionVariablesEditor";
 import { ProjectActionsList } from "./ProjectActionsList";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 
 export function GlobalActionsSettings() {
-  const { globalActions, environmentActionVariables } = useClientSettings();
-  const { environments } = useEnvironments();
+  const { globalActions } = useClientSettings();
   const [request, setRequest] = useState<ProjectScriptEditorRequest | null>(null);
   return (
     <SettingsSection id="global-actions" title="Global actions">
@@ -43,33 +40,6 @@ export function GlobalActionsSettings() {
           setRequest(editorRequestForScript(script, DEFAULT_RESOLVED_KEYBINDINGS))
         }
       />
-      {environments.map((environment) => (
-        <SettingsRow
-          key={environment.environmentId}
-          title={`Action variables · ${environment.label}`}
-          description={
-            <>
-              Override defaults for this environment on this device using {"{{env.sshName}}"} and
-              other named variables. Server defaults:{" "}
-              {JSON.stringify(environment.serverConfig?.environmentVariables ?? {})}
-            </>
-          }
-          control={
-            <ActionVariablesEditor
-              values={environmentActionVariables[environment.environmentId] ?? {}}
-              onSave={(values) =>
-                persistClientSettingsUpdate((current) => ({
-                  ...current,
-                  environmentActionVariables: {
-                    ...current.environmentActionVariables,
-                    [environment.environmentId]: values,
-                  },
-                }))
-              }
-            />
-          }
-        />
-      ))}
       <ProjectScriptEditorDialog
         showKeybinding={false}
         showSetup={false}

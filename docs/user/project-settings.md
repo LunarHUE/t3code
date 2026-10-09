@@ -24,8 +24,8 @@ setting you are editing, the layers icon counts them and the chain lists each on
 click a project to jump to it, or **Reset all** to make those projects follow the environment
 again.
 
-Providers and diagnostics are per machine: they show one environment at a time, the primary
-one until you pick another. Every other setting fans out to the selection.
+Providers, diagnostics, and Actions show one environment at a time, the primary
+one until you pick another. Other server settings fan out to the selection.
 
 On mobile, open **Settings** and use the filter in its header to choose connected environments
 and a project. The filter stays available in server-setting pages. With **All projects** selected,
@@ -106,8 +106,9 @@ access. Source Control contains automatic pull, the default pull request merge m
 generation. The same rows edit environment defaults or project overrides depending on the
 project crumb.
 
-The Project category, shown while a project is selected, holds the project's name, icon, actions,
-checkouts and removal. A project's `t3.json` actions can be imported there.
+The Project category, shown while a project is selected, holds the project's name, icon,
+checkouts and removal. Manage actions and import a project's `t3.json` actions in
+**Settings → Actions**.
 
 Settings a repository can also declare in `t3.json`, such as the workspace for new threads,
 resolve in one order: a project override, then the environment setting, then `t3.json`, then the
@@ -123,6 +124,17 @@ applies when the project and environment are both on **Inherit**.
 
 ## Global actions and templates
 
+On web and desktop, open **Settings → Actions** and choose an environment, then a project
+or checkout when you want to customize its actions and variables. Each variable shows its value
+and whether it comes from an inherited default or an override. Unsaved variable edits stay with
+their scope when you switch environments, projects, checkouts, or Settings categories. Save
+them before running an action that uses them.
+
+Project variables inherit the environment's default map until you override it. A project
+override replaces that whole map; it does not merge individual entries. **Use inherited map**
+removes the project override so the environment defaults apply again. Environment variables can
+be overridden individually on this device; resetting one restores its server default.
+
 Global actions are saved on this device and appear beside project actions in every environment.
 Command actions run in a terminal on the project's environment. URL actions open on your device,
 so editor links reach your locally installed editor. URL actions accept only `vscode:`,
@@ -137,10 +149,19 @@ either unquoted or inside single or double quotes. Templates using shell substit
 quoting, heredocs, or comments are refused; put complex logic in a script and pass variables as
 arguments. Command variable values cannot contain terminal control characters.
 
-Add project variables in the project's action settings, such as `sshName`, and refer to them as
+Add project variables in **Settings → Actions**, such as `sshName`, and refer to them as
 `{{project.sshName}}`. A project variable can override a built-in project value such as `name`.
 Environment variables use `{{env.sshName}}`; device-specific environment overrides take precedence
 over the defaults advertised by that environment's server.
+
+Variable values can reference other variables. Environment values can use `{{env.otherName}}`.
+Project values can also use project variables and the built-ins above. For example, set a project
+variable `editorHost` to `{{project.name}}.{{env.sshName}}.repos`, then use
+`{{project.editorHost}}` in an action. References use the current overrides, and the complete value
+is encoded or quoted once. Project and environment names and paths remain literal text.
+Circular references, missing variables, malformed references, and expansions that exceed the
+size or depth limits prevent the action from running. Unqualified braces such as `{{literal}}`
+inside a variable value remain literal text.
 
 For example, define a URL action once:
 
