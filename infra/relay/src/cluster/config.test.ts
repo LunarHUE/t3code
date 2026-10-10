@@ -1,5 +1,6 @@
 import * as NodeCrypto from "node:crypto";
 import { describe, expect, it } from "@effect/vitest";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -37,6 +38,17 @@ describe("cluster OIDC configuration", () => {
       expect(config.oidc?.tokenEndpointAuthMethod).toBe("client_secret_post");
       expect(config.clerkSecretKey).toBeUndefined();
       expect(config.cloudMintPublicKey).toBe(keys.publicKey);
+      expect(config.endpointHealthTimeoutMs).toBe(30_000);
+      expect(config.endpointHealthFailureThreshold).toBe(2);
+    }),
+  );
+  it.effect("fails startup with the reason for an invalid endpoint health timeout", () =>
+    Effect.gen(function* () {
+      const exit = yield* load({ RELAY_ENDPOINT_HEALTH_TIMEOUT_MS: "10s" }).pipe(Effect.exit);
+      expect(Exit.isFailure(exit)).toBe(true);
+      expect(String(Exit.isFailure(exit) ? Cause.pretty(exit.cause) : "")).toContain(
+        "RELAY_ENDPOINT_HEALTH_TIMEOUT_MS must be an integer from 1000 to 120000, got '10s'.",
+      );
     }),
   );
   it.effect.each([

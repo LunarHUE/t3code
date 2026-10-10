@@ -4,7 +4,11 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
-import { RelayConfiguration } from "../Config.ts";
+import {
+  endpointHealthFailureThresholdConfig,
+  endpointHealthTimeoutMsConfig,
+  RelayConfiguration,
+} from "../Config.ts";
 import { parsePrivateEndpointDomains, privateEndpointForUrl } from "../privateEndpoints.ts";
 
 const EndpointInput = Schema.Array(
@@ -137,6 +141,8 @@ export const layer = Layer.effect(
       apnsDeliveryJobSigningSecret: Redacted.make("disabled-in-cluster-runtime"),
       managedEndpointBaseDomain: undefined,
       managedEndpointNamespace: undefined,
+      endpointHealthTimeoutMs: yield* endpointHealthTimeoutMsConfig,
+      endpointHealthFailureThreshold: yield* endpointHealthFailureThresholdConfig,
     });
   }),
 );

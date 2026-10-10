@@ -4,6 +4,8 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import {
+  endpointHealthFailureThresholdConfig,
+  endpointHealthTimeoutMsConfig,
   legacyManagedEndpointCleanupModeConfig,
   legacyTunnelGraceMinutesConfig,
   managedEndpointCleanupModeConfig,
@@ -74,5 +76,47 @@ it.effect.each(["0", "-10"])("rejects a grace override of %s minutes", (value) =
       ),
     );
     expect(error._tag).toBe("ConfigError");
+  }),
+);
+
+it.effect.each([
+  { name: "unset", env: {}, expected: 30_000 },
+  { name: "empty", env: { RELAY_ENDPOINT_HEALTH_TIMEOUT_MS: "" }, expected: 30_000 },
+  { name: "set", env: { RELAY_ENDPOINT_HEALTH_TIMEOUT_MS: "45000" }, expected: 45_000 },
+  { name: "the minimum", env: { RELAY_ENDPOINT_HEALTH_TIMEOUT_MS: "1000" }, expected: 1_000 },
+  { name: "the maximum", env: { RELAY_ENDPOINT_HEALTH_TIMEOUT_MS: "120000" }, expected: 120_000 },
+] as const)("loads the endpoint health timeout when $name", ({ env, expected }) =>
+  Effect.gen(function* () {
+    const timeoutMs = yield* endpointHealthTimeoutMsConfig.parse(ConfigProvider.fromEnv({ env }));
+    expect(timeoutMs).toBe(expected);
+  }),
+);
+
+it.effect.each([" ", "abc", "30s", "999", "120001", "1500.5"])(
+  "rejects an endpoint health timeout of '%s'",
+  (value) =>
+    Effect.gen(function* () {
+      const error = yield* Effect.flip(
+        endpointHealthTimeoutMsConfig.parse(
+          ConfigProvider.fromEnv({ env: { RELAY_ENDPOINT_HEALTH_TIMEOUT_MS: value } }),
+        ),
+      );
+      expect(error._tag).toBe("ConfigError");
+      expect(error.message).toContain(
+        `RELAY_ENDPOINT_HEALTH_TIMEOUT_MS must be an integer from 1000 to 120000, got '${value}'.`,
+      );
+    }),
+);
+
+it.effect("loads the endpoint health failure threshold", () =>
+  Effect.gen(function* () {
+    const parse = (env: Record<string, string>) =>
+      endpointHealthFailureThresholdConfig.parse(ConfigProvider.fromEnv({ env }));
+    expect(yield* parse({})).toBe(2);
+    expect(yield* parse({ RELAY_ENDPOINT_HEALTH_FAILURE_THRESHOLD: "3" })).toBe(3);
+    const error = yield* Effect.flip(parse({ RELAY_ENDPOINT_HEALTH_FAILURE_THRESHOLD: "0" }));
+    expect(error.message).toContain(
+      "RELAY_ENDPOINT_HEALTH_FAILURE_THRESHOLD must be an integer from 1 to 10, got '0'.",
+    );
   }),
 );

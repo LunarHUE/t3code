@@ -407,6 +407,45 @@ const make = Effect.gen(function* () {
   const httpClient = yield* HttpClient.HttpClient;
   const crypto = yield* Crypto.Crypto;
   const relayIssuer = normalizeRelayIssuer(settings.relayIssuer);
+  const healthTimeoutMs =
+    settings.endpointHealthTimeoutMs ?? RelayConfiguration.DEFAULT_ENDPOINT_HEALTH_TIMEOUT_MS;
+  const healthFailureThreshold =
+    settings.endpointHealthFailureThreshold ??
+    RelayConfiguration.DEFAULT_ENDPOINT_HEALTH_FAILURE_THRESHOLD;
+  // Per-process probe history, keyed by environment. `round` advances on every
+  // recorded outcome so probes that overlap one stall count as one failure.
+  const probeStates = new Map<
+    string,
+    {
+      readonly round: number;
+      readonly failures: number;
+      readonly lastOnline: RelayEnvironmentStatusResponse | undefined;
+    }
+  >();
+  const probeRound = (environmentId: string) => probeStates.get(environmentId)?.round ?? 0;
+  const recordProbeOnline = (response: RelayEnvironmentStatusResponse) =>
+    Effect.sync(() => {
+      probeStates.set(response.environmentId, {
+        round: probeRound(response.environmentId) + 1,
+        failures: 0,
+        lastOnline: response,
+      });
+    });
+  /** Returns the last online response while failures stay under the threshold. */
+  const recordProbeFailure = (environmentId: string, startedRound: number) =>
+    Effect.sync(() => {
+      const state = probeStates.get(environmentId);
+      if (state === undefined) return { failures: 1, held: undefined };
+      // A probe that overlapped one already recorded adds nothing: that one
+      // either counted this stall or saw the environment recover.
+      const counts = state.round === startedRound;
+      const failures = counts ? state.failures + 1 : state.failures;
+      if (counts) probeStates.set(environmentId, { ...state, round: state.round + 1, failures });
+      return {
+        failures,
+        held: failures < healthFailureThreshold ? state.lastOnline : undefined,
+      };
+    });
   const makeEnvironmentClient = (httpBaseUrl: string) =>
     makeEnvironmentHttpApiClient(httpBaseUrl).pipe(
       Effect.provideService(HttpClient.HttpClient, httpClient),
@@ -520,58 +559,66 @@ const make = Effect.gen(function* () {
       const checkedAt = DateTime.formatIso(now);
       const traceId = yield* currentTraceId;
       const environmentClient = yield* makeEnvironmentClient(endpoint.httpBaseUrl);
-      const responseOption = yield* environmentClient.connect.health({ payload: { proof } }).pipe(
+      const startedRound = probeRound(link.environmentId);
+      const probe = yield* environmentClient.connect.health({ payload: { proof } }).pipe(
         withoutRedirects,
         Effect.match({
           onFailure: (cause) => ({ _tag: "Failure" as const, cause }),
           onSuccess: (response) => ({ _tag: "Success" as const, response }),
         }),
-        Effect.timeoutOption(Duration.millis(ENVIRONMENT_MINT_REQUEST_TIMEOUT_MS)),
+        Effect.timeoutOption(Duration.millis(healthTimeoutMs)),
+        Effect.map(Option.getOrUndefined),
       );
-      if (Option.isNone(responseOption)) {
+      if (probe === undefined || probe._tag === "Failure") {
+        const failure =
+          probe === undefined
+            ? {
+                outcome: "timeout",
+                logMessage: `Managed endpoint health request timed out after ${healthTimeoutMs}ms (${RelayConfiguration.ENDPOINT_HEALTH_TIMEOUT_ENV})`,
+                error: `Managed endpoint health request timed out after ${healthTimeoutMs}ms (${RelayConfiguration.ENDPOINT_HEALTH_TIMEOUT_ENV}).`,
+                failureReason: undefined,
+              }
+            : {
+                outcome: "failure",
+                logMessage: "Managed endpoint health request failed",
+                error: environmentHealthRequestFailureMessage(probe.cause),
+                failureReason: environmentHealthRequestFailureReason(probe.cause),
+              };
+        const recorded = yield* recordProbeFailure(link.environmentId, startedRound);
+        const { failures } = recorded;
+        // A released tunnel is gone for good, so its last online answer is stale.
+        const held = allocation?.tunnelReleasedAt ? undefined : recorded.held;
         yield* Effect.annotateCurrentSpan({
-          "relay.environment_health.outcome": "timeout",
+          "relay.environment_health.outcome": failure.outcome,
+          ...(failure.failureReason
+            ? { "relay.environment_health.failure_reason": failure.failureReason }
+            : {}),
+          "relay.environment_health.consecutive_failures": failures,
+          "relay.environment_health.held_online": held !== undefined,
           "relay.environment_health.trace_id": traceId,
         });
-        yield* Effect.logWarning("Managed endpoint health request timed out", {
+        yield* Effect.logWarning(failure.logMessage, {
           environmentId: link.environmentId,
           endpoint: endpoint.httpBaseUrl,
+          ...(failure.failureReason ? { failureReason: failure.failureReason } : {}),
+          timeoutMs: healthTimeoutMs,
+          consecutiveFailures: failures,
+          failureThreshold: healthFailureThreshold,
+          reported: held === undefined ? "offline" : "online",
           traceId,
         });
+        if (held !== undefined) return { ...held, endpoint };
         return {
           environmentId: link.environmentId,
           endpoint,
           status: "offline" as const,
           checkedAt,
-          error: "Managed endpoint health request timed out.",
+          error: failure.error,
           ...offlineReasonFor(allocation),
           traceId,
         };
       }
-      if (responseOption.value._tag === "Failure") {
-        const failureReason = environmentHealthRequestFailureReason(responseOption.value.cause);
-        yield* Effect.annotateCurrentSpan({
-          "relay.environment_health.outcome": "failure",
-          "relay.environment_health.failure_reason": failureReason,
-          "relay.environment_health.trace_id": traceId,
-        });
-        yield* Effect.logWarning("Managed endpoint health request failed", {
-          environmentId: link.environmentId,
-          endpoint: endpoint.httpBaseUrl,
-          failureReason,
-          traceId,
-        });
-        return {
-          environmentId: link.environmentId,
-          endpoint,
-          status: "offline" as const,
-          checkedAt,
-          error: environmentHealthRequestFailureMessage(responseOption.value.cause),
-          ...offlineReasonFor(allocation),
-          traceId,
-        };
-      }
-      const decoded = responseOption.value.response;
+      const decoded = probe.response;
       const verified = yield* verifyEnvironmentHealthResponse({
         response: decoded,
         environmentId: input.environmentId,
@@ -587,13 +634,15 @@ const make = Effect.gen(function* () {
           operation: "status",
         });
       }
-      return {
+      const online = {
         environmentId: link.environmentId,
         endpoint,
         status: "online" as const,
         checkedAt: decoded.checkedAt,
         descriptor: decoded.descriptor,
       };
+      yield* recordProbeOnline(online);
+      return online;
     }),
     connect: Effect.fn("relay.environment_connector.connect")(function* (input) {
       yield* Effect.annotateCurrentSpan({
