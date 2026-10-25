@@ -7,16 +7,16 @@
     { self, nixpkgs }:
     let
       # Bump with each fork release. Hashes are the SRI sha256 of the release tarballs.
-      version = "0.0.46-nightly.20261009.10";
+      version = "0.1.2";
       relayUrl = "https://t3connect.lunarhue.com";
       targets = {
         x86_64-linux = {
           arch = "linux-x64";
-          hash = "sha256-RS2kHjuibltGZR6Y531uCjfkt3ZMIOWXhgwtUkuNZRI=";
+          hash = "sha256-HfB5G0jgqySqGdLLX3rsr+hV38j+Nei+WEBnD1tUHuY=";
         };
         aarch64-linux = {
           arch = "linux-arm64";
-          hash = "sha256-miqu6jvcg8iwxlcQvPIv/XSTnNcLEWumCCXd3KrBR9Y=";
+          hash = "sha256-7zQe0hYrPS6/W68WX4jBGrIrU/JF9l39cPA7of2D7LU=";
         };
       };
       forAllSystems =
@@ -41,7 +41,7 @@
               inherit (target) hash;
             };
             sourceRoot = name;
-            # Bun embeds its program in the ELF; patching or stripping it breaks it.
+            # The executable embeds its program; preserve those bytes when installing it.
             # The devcontainer supplies the runtime libraries.
             dontFixup = true;
             installPhase = ''
