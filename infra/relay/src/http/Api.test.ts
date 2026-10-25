@@ -566,6 +566,7 @@ const linkedEnvironmentRecord = {
   },
   environmentPublicKey: "public-key",
   linkedAt: "2026-07-28T00:00:00.000Z",
+  managedTunnelsEnabled: true,
 } as const;
 
 describe("relay managed tunnel recovery", () => {

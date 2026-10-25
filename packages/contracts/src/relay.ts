@@ -226,6 +226,8 @@ export const RelayEnvironmentConfigRequest = Schema.Struct({
   environmentCredential: Schema.String,
   cloudMintPublicKey: Schema.String,
   endpointRuntime: Schema.NullOr(RelayManagedEndpointRuntimeConfig),
+  /** The relay advertises this environment's private URL instead of a tunnel. */
+  privateEndpoint: Schema.optional(Schema.Boolean),
 });
 export type RelayEnvironmentConfigRequest = typeof RelayEnvironmentConfigRequest.Type;
 

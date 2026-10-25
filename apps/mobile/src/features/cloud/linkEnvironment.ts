@@ -215,9 +215,11 @@ export const linkEnvironmentToCloudWithPreference = Effect.fn(
     .pipe(
       Effect.mapError(decodedRelayClientError(`${relayUrl}/v1/client/environment-links failed`)),
     );
+  // A private relay answers a managed request with the server's private URL and no tunnel.
+  const privateEndpoint = link.endpoint.providerKind === "manual" && link.endpointRuntime === null;
   yield* ensureLinkedEnvironmentMatches({
     expectedEnvironmentId: input.connection.environmentId,
-    expectedProviderKind: MANAGED_ENDPOINT_PROVIDER_KIND,
+    expectedProviderKind: privateEndpoint ? "manual" : MANAGED_ENDPOINT_PROVIDER_KIND,
     link,
   });
 
@@ -231,6 +233,7 @@ export const linkEnvironmentToCloudWithPreference = Effect.fn(
         environmentCredential: link.environmentCredential,
         cloudMintPublicKey: link.cloudMintPublicKey,
         endpointRuntime: link.endpointRuntime,
+        ...(privateEndpoint ? { privateEndpoint } : {}),
       },
     })
     .pipe(

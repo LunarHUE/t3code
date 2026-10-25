@@ -79,6 +79,7 @@ const managedLink = {
   },
   environmentPublicKey: "public-key",
   linkedAt: "2026-05-25T00:00:00.000Z",
+  managedTunnelsEnabled: true,
   holdWebhooksWhileOffline: false,
 };
 

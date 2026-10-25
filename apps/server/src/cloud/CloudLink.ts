@@ -84,6 +84,7 @@ import {
   CLOUD_LINK_REVOKED,
   CLOUD_LINKED_USER_ID,
   CLOUD_MINT_PUBLIC_KEY,
+  CLOUD_PRIVATE_ENDPOINT_ACTIVE,
   decodeConfirmedOrigin,
   decodeRuntimeConfig,
   encodeConfirmedOriginJson,
@@ -595,6 +596,19 @@ const make = Effect.gen(function* () {
     allowNonLoopbackRequestHost = false,
   ) {
     const keyPair = yield* getOrCreateEnvironmentKeyPairFromSecretStore(secrets);
+    const privateUrl = yield* relayPrivateUrlConfig.pipe(
+      Effect.mapError(() => new CloudLinkOriginInvalidError({ origin: "private" })),
+    );
+    // A private relay advertises this URL instead of provisioning a tunnel,
+    // whichever client asked for the link.
+    const endpoint =
+      request.endpoint.providerKind === "cloudflare_tunnel" && Option.isSome(privateUrl)
+        ? {
+            httpBaseUrl: privateUrl.value,
+            wsBaseUrl: privateUrl.value.replace(/^https:/u, "wss:"),
+            providerKind: request.endpoint.providerKind,
+          }
+        : request.endpoint;
     if (
       !isSupportedLinkProviderKind(request) ||
       !isAllowedEndpointOrigin({
@@ -620,7 +634,7 @@ const make = Effect.gen(function* () {
       descriptor,
       environmentId: descriptor.environmentId,
       environmentPublicKey: normalizePemForSignedPayload(keyPair.publicKey),
-      endpoint: request.endpoint,
+      endpoint,
       origin: request.origin,
       scopes: linkProofScopes(request),
     } satisfies RelayEnvironmentLinkProofPayload;
@@ -788,6 +802,7 @@ const make = Effect.gen(function* () {
         : null;
       yield* endpointRuntime.applyConfig(null);
       yield* secrets.remove(CLOUD_ENDPOINT_CONFIRMED_ORIGIN);
+      yield* secrets.remove(CLOUD_PRIVATE_ENDPOINT_ACTIVE);
       // Store runtime config last so partial writes cannot appear managed or respawn a stale tunnel.
       yield* secrets.remove(CLOUD_ENDPOINT_RUNTIME_CONFIG);
 
@@ -806,6 +821,8 @@ const make = Effect.gen(function* () {
       yield* awarenessRelay.requestCatchUp();
       if (endpointRuntimeJson !== null) {
         yield* secrets.set(CLOUD_ENDPOINT_RUNTIME_CONFIG, stringToBytes(endpointRuntimeJson));
+      } else if (payload.privateEndpoint === true) {
+        yield* secrets.set(CLOUD_PRIVATE_ENDPOINT_ACTIVE, stringToBytes("true"));
       }
       if (payload.endpointRuntime === null || options?.confirmedOrigin === undefined) {
         return {
@@ -865,19 +882,6 @@ const make = Effect.gen(function* () {
       const mode = yield* readCliDesiredLinkMode.pipe(withSecrets);
       const managedTunnelsEnabled = mode !== "publish_only";
       const relayUrl = yield* requireRelayUrl;
-      const privateUrl = yield* relayPrivateUrlConfig.pipe(
-        Effect.mapError(() => new CloudLinkOriginInvalidError({ origin: "private" })),
-      );
-      // A private relay advertises the URL this environment reports instead
-      // of provisioning a tunnel, so the proof carries it in place of the
-      // loopback origin. The provider kind still requests a managed endpoint.
-      const endpoint =
-        managedTunnelsEnabled && Option.isSome(privateUrl)
-          ? {
-              httpBaseUrl: privateUrl.value,
-              wsBaseUrl: privateUrl.value.replace(/^https:/u, "wss:"),
-            }
-          : { httpBaseUrl: parsedOrigin.httpBaseUrl, wsBaseUrl: parsedOrigin.wsBaseUrl };
       const challenge = yield* relayClientRequest({
         url: `${relayUrl}/v1/client/environment-link-challenges`,
         token: token.accessToken,
@@ -893,7 +897,8 @@ const make = Effect.gen(function* () {
           challenge: challenge.challenge,
           relayIssuer: relayUrl,
           endpoint: {
-            ...endpoint,
+            httpBaseUrl: parsedOrigin.httpBaseUrl,
+            wsBaseUrl: parsedOrigin.wsBaseUrl,
             providerKind: managedTunnelsEnabled ? "cloudflare_tunnel" : "manual",
           },
           origin: parsedOrigin.origin,
@@ -921,6 +926,7 @@ const make = Effect.gen(function* () {
           environmentCredential: link.environmentCredential,
           cloudMintPublicKey: link.cloudMintPublicKey,
           endpointRuntime: link.endpointRuntime,
+          privateEndpoint: managedTunnelsEnabled && link.endpoint.providerKind === "manual",
         },
         {
           lockHeld: true,
@@ -1299,6 +1305,7 @@ const make = Effect.gen(function* () {
       relayUrl,
       relayIssuer,
       endpointRuntimeConfig,
+      privateEndpointActive,
       publishAgentActivity,
       holdWebhooks,
       revoked,
@@ -1309,12 +1316,16 @@ const make = Effect.gen(function* () {
         secrets.get(RELAY_URL_SECRET),
         secrets.get(RELAY_ISSUER_SECRET),
         secrets.get(CLOUD_ENDPOINT_RUNTIME_CONFIG),
+        secrets.get(CLOUD_PRIVATE_ENDPOINT_ACTIVE),
         secrets.get(PUBLISH_AGENT_ACTIVITY_SECRET),
         secrets.get(HOLD_WEBHOOKS_WHILE_OFFLINE_SECRET),
         secrets.get(CLOUD_LINK_REVOKED),
         reachability.latest,
       ],
-      { concurrency: 8 },
+      { concurrency: 9 },
+    );
+    const privateNetwork = Option.isSome(
+      yield* relayPrivateUrlConfig.pipe(Effect.orElseSucceed(() => Option.none())),
     );
     return {
       linked: Option.isSome(cloudUserId),
@@ -1322,7 +1333,9 @@ const make = Effect.gen(function* () {
       cloudUserId: Option.isSome(cloudUserId) ? bytesToString(cloudUserId.value) : null,
       relayUrl: Option.isSome(relayUrl) ? bytesToString(relayUrl.value) : null,
       relayIssuer: Option.isSome(relayIssuer) ? bytesToString(relayIssuer.value) : null,
-      managedTunnelActive: Option.isSome(endpointRuntimeConfig),
+      managedTunnelActive:
+        Option.isSome(endpointRuntimeConfig) || Option.isSome(privateEndpointActive),
+      ...(privateNetwork ? { privateNetwork } : {}),
       publishAgentActivity: Option.isSome(publishAgentActivity)
         ? bytesToString(publishAgentActivity.value) === "true"
         : false,
@@ -1353,6 +1366,7 @@ const make = Effect.gen(function* () {
               secrets.remove(CLOUD_MINT_PUBLIC_KEY),
               secrets.remove(CLOUD_ENDPOINT_RUNTIME_CONFIG),
               secrets.remove(CLOUD_ENDPOINT_CONFIRMED_ORIGIN),
+              secrets.remove(CLOUD_PRIVATE_ENDPOINT_ACTIVE),
               secrets.remove(PUBLISH_AGENT_ACTIVITY_SECRET),
               secrets.remove(HOLD_WEBHOOKS_WHILE_OFFLINE_SECRET),
               secrets.remove(CLOUD_LINK_REVOKED),

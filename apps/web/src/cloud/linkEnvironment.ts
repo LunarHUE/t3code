@@ -259,6 +259,7 @@ export const linkPrimaryEnvironmentToCloud: (input: {
   readonly target: CloudLinkTarget;
   readonly accountToken: string;
   readonly mode?: CloudLinkMode;
+  readonly privateNetwork?: boolean;
 }) => Effect.Effect<
   void,
   CloudEnvironmentLinkError,
@@ -267,6 +268,7 @@ export const linkPrimaryEnvironmentToCloud: (input: {
   readonly target: CloudLinkTarget;
   readonly accountToken: string;
   readonly mode?: CloudLinkMode;
+  readonly privateNetwork?: boolean;
 }) {
   const configuredRelayUrl = relayUrl();
   if (!configuredRelayUrl) {
@@ -278,9 +280,11 @@ export const linkPrimaryEnvironmentToCloud: (input: {
   const providerKind = managedTunnelsEnabled
     ? MANAGED_ENDPOINT_PROVIDER_KIND
     : PUBLISH_ONLY_PROVIDER_KIND;
+  // A private relay links the server's T3CODE_RELAY_PRIVATE_URL, so no tunnel client runs.
+  const privateEndpoint = managedTunnelsEnabled && input.privateNetwork === true;
   const relayClient = yield* ManagedRelay.ManagedRelayClient;
   const environmentClient = yield* makeEnvironmentHttpApiClient(input.target.httpBaseUrl);
-  if (managedTunnelsEnabled) {
+  if (managedTunnelsEnabled && !privateEndpoint) {
     yield* ensureRelayClientAvailable(EnvironmentId.make(input.target.environmentId));
   }
 
@@ -332,7 +336,7 @@ export const linkPrimaryEnvironmentToCloud: (input: {
     );
   yield* ensureLinkedEnvironmentMatches({
     expectedEnvironmentId: input.target.environmentId,
-    expectedProviderKind: providerKind,
+    expectedProviderKind: privateEndpoint ? "manual" : providerKind,
     link,
   });
 
@@ -346,6 +350,7 @@ export const linkPrimaryEnvironmentToCloud: (input: {
         environmentCredential: link.environmentCredential,
         cloudMintPublicKey: link.cloudMintPublicKey,
         endpointRuntime: link.endpointRuntime,
+        ...(privateEndpoint ? { privateEndpoint } : {}),
       },
     })
     .pipe(Effect.mapError(environmentApiError("Could not configure environment relay access.")));

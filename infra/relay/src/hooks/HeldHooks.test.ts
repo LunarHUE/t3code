@@ -48,6 +48,7 @@ const linkFor = (userId: string, key: string, environmentPublicKey: string) => (
   },
   environmentPublicKey,
   linkedAt: "2026-05-25T00:00:00.000Z",
+  managedTunnelsEnabled: true,
   holdWebhooksWhileOffline: true,
 });
 

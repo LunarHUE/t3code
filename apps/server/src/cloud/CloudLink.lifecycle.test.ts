@@ -12,10 +12,20 @@ import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { HttpClient, HttpClientResponse, HttpServer, type HttpClientRequest } from "effect/http";
+import {
+  HttpClient,
+  HttpClientResponse,
+  HttpServer,
+  HttpServerRequest,
+  type HttpClientRequest,
+} from "effect/http";
 import * as NetAddress from "effect/net/NetAddress";
 
-import { EnvironmentId } from "@t3tools/contracts";
+import {
+  AuthSessionId,
+  EnvironmentAuthenticatedPrincipal,
+  EnvironmentId,
+} from "@t3tools/contracts";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfigModule from "../config.ts";
@@ -297,6 +307,89 @@ describe("releaseManagedTunnelOnShutdown", () => {
               T3CODE_RELAY_URL: "https://relay.example.test",
               T3CODE_RELAY_PRIVATE_URL: "https://box-1.dev.example.test",
             },
+          }),
+        ),
+      ),
+    );
+  });
+
+  it.effect("signs a Settings link request with the private network URL", () => {
+    const { store } = makeMemorySecretStore();
+    return Effect.gen(function* () {
+      const link = yield* CloudLink.CloudLink;
+      const proof = yield* link
+        .linkProof(
+          {
+            challenge: "challenge",
+            relayIssuer: "https://relay.example.test",
+            endpoint: {
+              httpBaseUrl: "http://127.0.0.1:3773",
+              wsBaseUrl: "ws://127.0.0.1:3773",
+              providerKind: "cloudflare_tunnel",
+            },
+            origin: { localHttpHost: "127.0.0.1", localHttpPort: 3773 },
+          },
+          HttpServerRequest.fromWeb(new Request("http://127.0.0.1:3773/api/connect/link-proof")),
+        )
+        .pipe(
+          Effect.provideService(EnvironmentAuthenticatedPrincipal, {
+            sessionId: AuthSessionId.make("settings"),
+            subject: "settings",
+            method: "browser-session-cookie",
+            scopes: new Set<never>(),
+          }),
+        );
+      expect(decodeRelayJwt(proof).endpoint).toEqual({
+        httpBaseUrl: "https://box-1.dev.example.test",
+        wsBaseUrl: "wss://box-1.dev.example.test",
+        providerKind: "cloudflare_tunnel",
+      });
+    }).pipe(
+      provideReleaseHarness({
+        store,
+        applyConfigCalls: [],
+        requests: [],
+        descriptor: {
+          environmentId: EnvironmentId.make("env_123"),
+        } as ExecutionEnvironmentDescriptor,
+      }),
+      Effect.provide(
+        ConfigProvider.layer(
+          ConfigProvider.fromEnv({
+            env: { T3CODE_RELAY_PRIVATE_URL: "https://box-1.dev.example.test" },
+          }),
+        ),
+      ),
+    );
+  });
+
+  it.effect("reports a private endpoint link as reachable until it is unlinked", () => {
+    const { store } = makeMemorySecretStore();
+    const cloudMintPublicKey =
+      "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAqZ2u2LjMoAyG2QTHXmITJ9w6RzZtVUAv394XCcPV0zE=\n-----END PUBLIC KEY-----";
+    return Effect.gen(function* () {
+      const link = yield* CloudLink.CloudLink;
+      yield* link.applyRelayConfig({
+        relayUrl: "https://relay.example.test",
+        cloudUserId: "user-123",
+        environmentCredential: "credential",
+        cloudMintPublicKey,
+        endpointRuntime: null,
+        privateEndpoint: true,
+      });
+      expect(yield* link.linkState()).toMatchObject({
+        linked: true,
+        managedTunnelActive: true,
+        privateNetwork: true,
+      });
+      yield* link.unlink();
+      expect(yield* link.linkState()).toMatchObject({ linked: false, managedTunnelActive: false });
+    }).pipe(
+      provideReleaseHarness({ store, applyConfigCalls: [], requests: [] }),
+      Effect.provide(
+        ConfigProvider.layer(
+          ConfigProvider.fromEnv({
+            env: { T3CODE_RELAY_PRIVATE_URL: "https://box-1.dev.example.test" },
           }),
         ),
       ),

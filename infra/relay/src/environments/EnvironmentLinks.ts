@@ -16,6 +16,7 @@ import { relayEnvironmentLinks } from "../persistence/schema.ts";
 
 export interface RelayLinkedEnvironmentRecord extends RelayClientEnvironmentRecord {
   readonly environmentPublicKey: string;
+  readonly managedTunnelsEnabled: boolean;
 }
 
 export interface AgentAwarenessDeliveryUserRecord {
@@ -321,6 +322,7 @@ const make = Effect.gen(function* () {
           endpointWsBaseUrl: relayEnvironmentLinks.endpointWsBaseUrl,
           endpointProviderKind: relayEnvironmentLinks.endpointProviderKind,
           createdAt: relayEnvironmentLinks.createdAt,
+          managedTunnelsEnabled: relayEnvironmentLinks.managedTunnelsEnabled,
         })
         .from(relayEnvironmentLinks)
         .where(
@@ -349,6 +351,7 @@ const make = Effect.gen(function* () {
                   },
                   environmentPublicKey: row.environmentPublicKey,
                   linkedAt: row.createdAt,
+                  managedTunnelsEnabled: row.managedTunnelsEnabled,
                 }
               : null;
           }),
@@ -407,6 +410,7 @@ const make = Effect.gen(function* () {
               },
               environmentPublicKey: row.environmentPublicKey,
               linkedAt: row.createdAt,
+              managedTunnelsEnabled: true,
               holdWebhooksWhileOffline: row.holdWebhooksWhileOffline,
             })),
           ),

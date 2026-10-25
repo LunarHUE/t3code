@@ -11,6 +11,8 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 export const CLOUD_MINT_PUBLIC_KEY = "cloud-mint-ed25519-public-key";
 export const CLOUD_ENDPOINT_RUNTIME_CONFIG = "cloud-endpoint-runtime-config";
 export const CLOUD_ENDPOINT_CONFIRMED_ORIGIN = "cloud-endpoint-confirmed-origin";
+/** Set when a private relay advertises T3CODE_RELAY_PRIVATE_URL in place of a tunnel. */
+export const CLOUD_PRIVATE_ENDPOINT_ACTIVE = "cloud-private-endpoint-active";
 export const CLOUD_LINKED_USER_ID = "cloud-linked-user-id";
 export const RELAY_URL_SECRET = "cloud-relay-url";
 export const RELAY_ISSUER_SECRET = "cloud-relay-issuer";

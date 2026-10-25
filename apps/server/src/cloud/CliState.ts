@@ -8,6 +8,7 @@ import {
   CLOUD_LINK_REVOKED,
   CLOUD_LINKED_USER_ID,
   CLOUD_MINT_PUBLIC_KEY,
+  CLOUD_PRIVATE_ENDPOINT_ACTIVE,
   PUBLISH_AGENT_ACTIVITY_SECRET,
   RELAY_ENVIRONMENT_CREDENTIAL_SECRET,
   RELAY_ISSUER_SECRET,
@@ -64,6 +65,7 @@ export const dropRevokedCloudLink = Effect.gen(function* () {
       secrets.remove(CLOUD_MINT_PUBLIC_KEY),
       secrets.remove(CLOUD_ENDPOINT_RUNTIME_CONFIG),
       secrets.remove(CLOUD_ENDPOINT_CONFIRMED_ORIGIN),
+      secrets.remove(CLOUD_PRIVATE_ENDPOINT_ACTIVE),
     ],
     { concurrency: "unbounded" },
   );
@@ -84,6 +86,7 @@ export const clearPersistedCloudLink = Effect.gen(function* () {
       secrets.remove(CLOUD_MINT_PUBLIC_KEY),
       secrets.remove(CLOUD_ENDPOINT_RUNTIME_CONFIG),
       secrets.remove(CLOUD_ENDPOINT_CONFIRMED_ORIGIN),
+      secrets.remove(CLOUD_PRIVATE_ENDPOINT_ACTIVE),
       secrets.remove(PUBLISH_AGENT_ACTIVITY_SECRET),
       secrets.remove(CLOUD_LINK_REVOKED),
     ],

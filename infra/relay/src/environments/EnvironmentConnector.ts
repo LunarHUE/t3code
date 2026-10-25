@@ -317,6 +317,13 @@ export function validateManagedEndpoint(input: {
   readonly privateEndpointDomains?: ReadonlyArray<string>;
 }): Result.Result<RelayManagedEndpoint, ManagedEndpointValidationFailure> {
   const { link, allocation, baseDomain } = input;
+  // Publish-only links are manual too, but never advertise a reachable endpoint.
+  if (!link.managedTunnelsEnabled) {
+    return Result.fail({
+      reason: "endpoint_provider_not_managed",
+      attributes: { "relay.authorization.endpoint_provider_kind": link.endpoint.providerKind },
+    });
+  }
   if (link.endpoint.providerKind === "manual" && input.privateEndpoints) {
     // Same precedence as provisioning: a per-environment entry, then the shared domains.
     const configured =

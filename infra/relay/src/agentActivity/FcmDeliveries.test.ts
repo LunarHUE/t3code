@@ -181,6 +181,7 @@ function harness() {
                 environmentId: EnvironmentId.make(input.environmentId),
                 label: "Desktop",
                 environmentPublicKey: "key",
+                managedTunnelsEnabled: false,
                 linkedAt: state.updatedAt,
                 endpoint: {
                   httpBaseUrl: "https://env.test",

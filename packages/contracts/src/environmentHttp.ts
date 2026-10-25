@@ -498,6 +498,8 @@ export const EnvironmentCloudLinkStateResult = Schema.Struct({
   relayUrl: Schema.NullOr(Schema.String),
   relayIssuer: Schema.NullOr(Schema.String),
   managedTunnelActive: Schema.optional(Schema.Boolean),
+  /** T3CODE_RELAY_PRIVATE_URL is set, so links use it instead of a tunnel. */
+  privateNetwork: Schema.optional(Schema.Boolean),
   publishAgentActivity: Schema.Boolean,
   holdWebhooksWhileOffline: Schema.optional(Schema.Boolean),
   linkRevoked: Schema.optional(Schema.Boolean),
