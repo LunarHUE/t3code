@@ -669,99 +669,85 @@ function ThreadRouteContent(
       ).settings,
     [routeEnvironmentRuntime?.serverConfig?.settings, selectedThreadProject],
   );
-  const handleRunProjectScript = useCallback(
-    async (script: ProjectScript) => {
-      terminalDebugLog("project-script:press", { scriptId: script.id });
+  const handleRunProjectScript = async (script: ProjectScript) => {
+    terminalDebugLog("project-script:press", { scriptId: script.id });
 
-      if (!selectedThread || !selectedThreadProject?.workspaceRoot) {
-        terminalDebugLog("project-script:abort", {
-          scriptId: script.id,
-          reason: "no-thread-or-workspace",
-        });
+    if (!selectedThread || !selectedThreadProject?.workspaceRoot) {
+      terminalDebugLog("project-script:abort", {
+        scriptId: script.id,
+        reason: "no-thread-or-workspace",
+      });
+      return;
+    }
+
+    const actionContext: ProjectActionContext = {
+      project: {
+        id: selectedThreadProject.id,
+        name: selectedThreadProject.title,
+        root: selectedThreadProject.workspaceRoot,
+      },
+      environment: {
+        id: selectedThread.environmentId,
+        label: selectedEnvironmentConnection?.environmentLabel ?? "Environment",
+        os: routeEnvironmentRuntime?.serverConfig?.environment.platform.os,
+      },
+      projectVariables: projectActionSettings.actionVariables,
+      environmentOverrides:
+        actionPreferences.environmentActionVariables?.[selectedThread.environmentId],
+      environmentDefaults: routeEnvironmentRuntime?.serverConfig?.environmentVariables,
+    };
+    try {
+      if (script.kind === "url") {
+        await Linking.openURL(resolveProjectAction(script, actionContext));
         return;
       }
+    } catch (error) {
+      Alert.alert("Could not run action", error instanceof Error ? error.message : String(error));
+      return;
+    }
 
-      const actionContext: ProjectActionContext = {
-        project: {
-          id: selectedThreadProject.id,
-          name: selectedThreadProject.title,
-          root: selectedThreadProject.workspaceRoot,
-        },
-        environment: {
-          id: selectedThread.environmentId,
-          label: selectedEnvironmentConnection?.environmentLabel ?? "Environment",
-          os: routeEnvironmentRuntime?.serverConfig?.environment.platform.os,
-        },
-        projectVariables: projectActionSettings.actionVariables,
-        environmentOverrides:
-          actionPreferences.environmentActionVariables?.[selectedThread.environmentId],
-        environmentDefaults: routeEnvironmentRuntime?.serverConfig?.environmentVariables,
-      };
-      try {
-        if (script.kind === "url") {
-          await Linking.openURL(resolveProjectAction(script, actionContext));
-          return;
-        }
-      } catch (error) {
-        Alert.alert("Could not run action", error instanceof Error ? error.message : String(error));
-        return;
-      }
-
-      if (!readEnvironmentScope(selectedThread.environmentId, AuthTerminalOperateScope)) return;
-      const targetTerminalId = resolveProjectScriptTerminalId({
-        existingTerminalIds: terminalMenuSessions.map((session) => session.terminalId),
-        ...(knownTerminalSessions === null ||
-        !readEnvironmentScope(selectedThread.environmentId, AuthTerminalReadScope)
-          ? { uniqueSuffix: uuidv4() }
-          : {}),
-        hasRunningTerminal: terminalMenuSessions.some(
-          (session) => session.status === "running" || session.status === "starting",
-        ),
-      });
-      const preferredWorktreePath = resolvePreferredThreadWorktreePath({
-        threadShellWorktreePath: selectedThread.worktreePath ?? null,
-        threadDetailWorktreePath: selectedThreadDetailWorktreePath,
-      });
-      const cwd = projectScriptCwd({
-        project: { cwd: selectedThreadProject.workspaceRoot },
-        worktreePath: preferredWorktreePath,
-      });
-      const env = projectScriptRuntimeEnv({
-        project: { cwd: selectedThreadProject.workspaceRoot },
-        worktreePath: preferredWorktreePath,
-      });
-      stagePendingTerminalLaunch({
-        target: {
-          environmentId: selectedThread.environmentId,
-          threadId: selectedThread.id,
-          terminalId: targetTerminalId,
-        },
-        launch: {
-          cwd,
-          worktreePath: preferredWorktreePath,
-          env,
-          action: { script, context: actionContext },
-        },
-      });
-      void navigation.navigate("ThreadTerminal", {
-        environmentId: String(selectedThread.environmentId),
-        threadId: String(selectedThread.id),
+    if (!readEnvironmentScope(selectedThread.environmentId, AuthTerminalOperateScope)) return;
+    const targetTerminalId = resolveProjectScriptTerminalId({
+      existingTerminalIds: terminalMenuSessions.map((session) => session.terminalId),
+      ...(knownTerminalSessions === null ||
+      !readEnvironmentScope(selectedThread.environmentId, AuthTerminalReadScope)
+        ? { uniqueSuffix: uuidv4() }
+        : {}),
+      hasRunningTerminal: terminalMenuSessions.some(
+        (session) => session.status === "running" || session.status === "starting",
+      ),
+    });
+    const preferredWorktreePath = resolvePreferredThreadWorktreePath({
+      threadShellWorktreePath: selectedThread.worktreePath ?? null,
+      threadDetailWorktreePath: selectedThreadDetailWorktreePath,
+    });
+    const cwd = projectScriptCwd({
+      project: { cwd: selectedThreadProject.workspaceRoot },
+      worktreePath: preferredWorktreePath,
+    });
+    const env = projectScriptRuntimeEnv({
+      project: { cwd: selectedThreadProject.workspaceRoot },
+      worktreePath: preferredWorktreePath,
+    });
+    stagePendingTerminalLaunch({
+      target: {
+        environmentId: selectedThread.environmentId,
+        threadId: selectedThread.id,
         terminalId: targetTerminalId,
-      });
-    },
-    [
-      navigation,
-      selectedThread,
-      selectedThreadDetailWorktreePath,
-      selectedThreadProject,
-      terminalMenuSessions,
-      knownTerminalSessions,
-      actionPreferences.environmentActionVariables,
-      routeEnvironmentRuntime?.serverConfig,
-      selectedEnvironmentConnection?.environmentLabel,
-      projectActionSettings.actionVariables,
-    ],
-  );
+      },
+      launch: {
+        cwd,
+        worktreePath: preferredWorktreePath,
+        env,
+        action: { script, context: actionContext },
+      },
+    });
+    void navigation.navigate("ThreadTerminal", {
+      environmentId: String(selectedThread.environmentId),
+      threadId: String(selectedThread.id),
+      terminalId: targetTerminalId,
+    });
+  };
   const threadGitControlProps = {
     environmentId: environmentIdRaw ?? "",
     threadId: threadId ?? "",

@@ -36,13 +36,15 @@ export function ActionVariablesDraftProvider({ children }: { children: ReactNode
     if (pendingSaves.current.has(key)) return;
     pendingSaves.current.add(key);
     setSavingScopes(new Set(pendingSaves.current));
-    try {
-      await save();
-      setDrafts((current) => clearSavedActionVariablesDraft(current, key, draft));
-    } finally {
-      pendingSaves.current.delete(key);
-      setSavingScopes(new Set(pendingSaves.current));
-    }
+    await Promise.resolve()
+      .then(save)
+      .then(() => {
+        setDrafts((current) => clearSavedActionVariablesDraft(current, key, draft));
+      })
+      .finally(() => {
+        pendingSaves.current.delete(key);
+        setSavingScopes(new Set(pendingSaves.current));
+      });
   };
   const value = { drafts, setDraft, savingScopes, saveDraft };
   return <ActionVariablesDraftContext value={value}>{children}</ActionVariablesDraftContext>;

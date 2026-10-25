@@ -69,8 +69,7 @@ export function ProjectActionsSettings() {
     visibility: { id: string; hidden: boolean },
     resetOverride = false,
   ) {
-    setVariablesSaving(true);
-    try {
+    async function persistVisibility() {
       let saved = false;
       for (const candidate of targets) {
         const config = environments.find(
@@ -109,16 +108,18 @@ export function ProjectActionsSettings() {
         saved = true;
       }
       if (!saved) throw new Error("Connect to this project's environment to save action settings.");
-    } catch (error) {
-      toastManager.add({
-        type: "error",
-        title: "Action settings not saved",
-        description: error instanceof Error ? error.message : "Unable to save action settings.",
-      });
-      throw error;
-    } finally {
-      setVariablesSaving(false);
     }
+    setVariablesSaving(true);
+    await persistVisibility()
+      .catch((error: unknown) => {
+        toastManager.add({
+          type: "error",
+          title: "Action settings not saved",
+          description: error instanceof Error ? error.message : "Unable to save action settings.",
+        });
+        throw error;
+      })
+      .finally(() => setVariablesSaving(false));
   }
   const keybindings = representativeConfig?.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS;
   const mixed = targets.some(

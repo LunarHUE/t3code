@@ -242,13 +242,14 @@ function ActionEditor(props: {
         loading={pending}
         onPress={() => {
           setError(null);
-          try {
-            // A templated scheme is validated against the allowlist when clicked.
-            if (draft.kind === "url" && !/^\s*\{\{[^{}]+\}\}\s*:/.test(draft.command))
+          // A templated scheme is validated against the allowlist when clicked.
+          if (draft.kind === "url" && !/^\s*\{\{[^{}]+\}\}\s*:/.test(draft.command)) {
+            try {
               validateProjectActionUrl(draft.command.replace(/\{\{[^{}]+\}\}/g, "value"));
-          } catch (cause) {
-            setError(cause instanceof Error ? cause.message : "Invalid URL");
-            return;
+            } catch (cause) {
+              setError(cause instanceof Error ? cause.message : "Invalid URL");
+              return;
+            }
           }
           setPending(true);
           void props
@@ -388,18 +389,17 @@ function ProjectActions(props: {
     if (pendingRef.current || !supported) return false;
     pendingRef.current = true;
     setPending(true);
-    try {
-      const result = await updateSettings({
-        environmentId: props.project.environmentId,
-        input: {
-          patch: { projectSettingsOverrides: { [props.project.id]: { ...current, ...next } } },
-        },
+    return updateSettings({
+      environmentId: props.project.environmentId,
+      input: {
+        patch: { projectSettingsOverrides: { [props.project.id]: { ...current, ...next } } },
+      },
+    })
+      .then((result) => !AsyncResult.isFailure(result))
+      .finally(() => {
+        pendingRef.current = false;
+        setPending(false);
       });
-      return !AsyncResult.isFailure(result);
-    } finally {
-      pendingRef.current = false;
-      setPending(false);
-    }
   };
   const scripts = resolveProjectScripts(props.target.serverConfig.settings, props.project);
   const saveScripts = (defaultProjectScripts: readonly ProjectScript[]) =>

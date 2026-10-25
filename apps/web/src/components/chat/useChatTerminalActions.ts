@@ -225,9 +225,12 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
       environmentDefaults: environment?.serverConfig?.environmentVariables,
     };
     if (script.kind === "url") {
+      const api = readLocalApi();
+      if (!api) {
+        setThreadError(activeThreadId, "Unable to open link on this device.");
+        return;
+      }
       try {
-        const api = readLocalApi();
-        if (!api) throw new Error("Unable to open link on this device.");
         await api.shell.openExternal(resolveProjectAction(script, actionContext));
         if (options?.rememberAsLastInvoked !== false) {
           setLastInvokedScriptByProjectId((current) => ({
