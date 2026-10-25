@@ -59,6 +59,9 @@ export function relayProtectedErrorMessage(error: RelayProtectedError): string {
     case "RelayEnvironmentLinkFailedError":
       return `Relay could not link the environment (${error.reason}).`;
     case "RelayEnvironmentLinkUnavailableError":
+      if (error.reason === "private_endpoint_required") {
+        return "This relay only links hosts with a private address. Set T3CODE_RELAY_PRIVATE_URL to an HTTPS address the relay allows, then restart T3 Code.";
+      }
       return `Relay cannot provision the managed endpoint (${error.reason}).${
         error.provisioningStage ? ` Failed stage: ${error.provisioningStage}.` : ""
       }`;

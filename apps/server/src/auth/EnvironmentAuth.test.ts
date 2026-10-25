@@ -713,6 +713,40 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
     ),
   );
 
+  it.effect("accepts a bound socket proof behind a proxy that forwards proto wss", () =>
+    Effect.gen(function* () {
+      const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const sessions = yield* SessionStore.SessionStore;
+      const key = makeDpopKey();
+      const exchanged = yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
+        "desktop-bootstrap-token",
+        ["orchestration:read"],
+        requestMetadata,
+        { proofKeyThumbprint: key.thumbprint },
+      );
+      const session = yield* sessions.verify(exchanged.access_token);
+      const rpc = yield* serverAuth.issueWebSocketTicket(session, { use: "rpc" });
+      const host = "box-1.dev.example.com";
+      const verified = yield* serverAuth.authenticateWebSocketUpgrade(
+        {
+          method: "GET",
+          url: `/ws?wsTicket=${rpc.ticket}&dpop=${key.sign({
+            method: "GET",
+            url: `https://${host}/ws`,
+            token: rpc.ticket,
+            iat: Math.floor((yield* DateTime.now).epochMilliseconds / 1_000),
+          })}`,
+          cookies: {},
+          headers: { host, "x-forwarded-proto": "wss" },
+        } as never,
+        "rpc",
+      );
+      expect(verified.sessionId).toBe(session.sessionId);
+    }).pipe(
+      Effect.provide(layerEnvironmentAuth({ desktopBootstrapToken: "desktop-bootstrap-token" })),
+    ),
+  );
+
   it.effect("rejects a replayed proof on a bound RPC socket ticket", () =>
     Effect.gen(function* () {
       const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;

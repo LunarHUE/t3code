@@ -18,8 +18,9 @@ import { HttpClient } from "effect/http";
 import { ChildProcessSpawner } from "effect/process";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
-import { CLOUD_ENDPOINT_RUNTIME_CONFIG } from "./config.ts";
+import { CLOUD_ENDPOINT_RUNTIME_CONFIG, CLOUD_PRIVATE_ENDPOINT_ACTIVE } from "./config.ts";
 import * as ManagedEndpointRuntime from "./ManagedEndpointRuntime.ts";
+import { relayPrivateUrlConfig } from "./publicConfig.ts";
 
 // cloudflared finds the edge through the SRV record `_v2-origintunneld._tcp.argotunnel.com`,
 // which names these two hosts on port 7844. QUIC and HTTP/2 both use that port.
@@ -39,6 +40,8 @@ export type EndpointProbe =
 /** Everything one check learned. `null` means that step did not run. */
 export interface ReachabilityFacts {
   readonly managedTunnelConfigured: boolean;
+  /** Set when a private relay links T3CODE_RELAY_PRIVATE_URL instead of a tunnel. */
+  readonly privateEndpointUrl?: string | null;
   readonly connector: ManagedEndpointRuntime.ConnectorFacts | null;
   readonly endpoint: EndpointProbe | null;
   readonly edgeReachable: boolean | null;
@@ -66,6 +69,10 @@ export function classifyReachability(
     hint: string | null = null,
   ): Unreachable => ({ status: "unreachable", checkedAt, cause, reason, hint, fix });
   const restart = "Restart T3 Code. If it stays, run `t3 connect` again.";
+
+  if (facts.privateEndpointUrl) {
+    return classifyPrivateEndpoint(facts.privateEndpointUrl, endpoint, checkedAt);
+  }
 
   if (!facts.managedTunnelConfigured) {
     return fail(
@@ -151,6 +158,39 @@ export function classifyReachability(
       );
 }
 
+function classifyPrivateEndpoint(
+  url: string,
+  endpoint: EndpointProbe | null,
+  checkedAt: string,
+): EnvironmentConnectReachability {
+  if (endpoint?.kind === "status" && endpoint.status === 200) {
+    return { status: "reachable", checkedAt, readyConnections: null, protocol: null };
+  }
+  const fail = (cause: Unreachable["cause"], reason: string, fix: string): Unreachable => ({
+    status: "unreachable",
+    checkedAt,
+    cause,
+    reason,
+    hint: null,
+    fix,
+  });
+  const proxyFix = `Check the proxy or ingress that serves ${url} for this machine.`;
+  if (endpoint?.kind === "status") {
+    return fail(
+      "unexpected_response",
+      `The private T3 Connect address answered with HTTP ${endpoint.status}.`,
+      proxyFix,
+    );
+  }
+  return endpoint?.kind === "dns_failed"
+    ? fail(
+        "dns_failed",
+        `${url} does not resolve from this machine.`,
+        "Check the DNS settings on this machine or its VPN.",
+      )
+    : fail("timeout", `${url} did not answer from this machine.`, proxyFix);
+}
+
 /** The loud diagnosis the CLI prints and the server logs. */
 export function formatReachabilityFailure(result: Unreachable): string {
   return [
@@ -212,8 +252,8 @@ const make = Effect.gen(function* () {
     Effect.orElseSucceed(() => null),
   );
 
-  const probeEndpoint = (hostname: string) =>
-    httpClient.get(`https://${hostname}/.well-known/t3/environment`).pipe(
+  const probeEndpoint = (baseUrl: string) =>
+    httpClient.get(new URL("/.well-known/t3/environment", baseUrl).href).pipe(
       Effect.map((response): EndpointProbe => ({ kind: "status", status: response.status })),
       Effect.scoped,
       Effect.timeoutOption(ENDPOINT_REQUEST_TIMEOUT),
@@ -225,14 +265,34 @@ const make = Effect.gen(function* () {
       ),
     );
 
+  const readPrivateEndpointUrl = Effect.gen(function* () {
+    const active = yield* secrets
+      .get(CLOUD_PRIVATE_ENDPOINT_ACTIVE)
+      .pipe(Effect.orElseSucceed(Option.none));
+    if (Option.isNone(active)) return null;
+    const url = yield* relayPrivateUrlConfig.pipe(Effect.orElseSucceed(Option.none));
+    return Option.getOrNull(url);
+  });
+
   const gatherFacts = Effect.gen(function* () {
+    const privateEndpointUrl = yield* readPrivateEndpointUrl;
+    if (privateEndpointUrl !== null) {
+      return {
+        managedTunnelConfigured: true,
+        privateEndpointUrl,
+        connector: null,
+        endpoint: yield* probeEndpoint(privateEndpointUrl),
+        edgeReachable: null,
+        exitNode: null,
+      } satisfies ReachabilityFacts;
+    }
     const managedTunnelConfigured = Option.isSome(
       yield* secrets.get(CLOUD_ENDPOINT_RUNTIME_CONFIG).pipe(Effect.orElseSucceed(Option.none)),
     );
     const connector = managedTunnelConfigured ? yield* runtime.inspectConnector : null;
     const endpoint =
       connector?.hostname && connector.readyConnections !== 0
-        ? yield* probeEndpoint(connector.hostname)
+        ? yield* probeEndpoint(`https://${connector.hostname}/`)
         : null;
     const facts: ReachabilityFacts = {
       managedTunnelConfigured,

@@ -370,6 +370,7 @@ export type RelayEnvironmentLinkFailedReason = typeof RelayEnvironmentLinkFailed
 export const RelayEnvironmentLinkUnavailableReason = Schema.Literals([
   "managed_endpoint_not_configured",
   "managed_endpoint_provisioning_failed",
+  "private_endpoint_required",
 ]);
 export type RelayEnvironmentLinkUnavailableReason =
   typeof RelayEnvironmentLinkUnavailableReason.Type;

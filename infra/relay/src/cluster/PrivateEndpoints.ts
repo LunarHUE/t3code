@@ -31,7 +31,7 @@ export const layer = Layer.effect(
               userId: input.userId,
               environmentId: input.environmentId,
               stage: "verify-endpoint",
-              reason: "endpoint-mismatch",
+              reason: "private-endpoint-required",
             }),
           );
         return Effect.succeed({
