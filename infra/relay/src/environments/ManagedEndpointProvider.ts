@@ -68,6 +68,7 @@ const ManagedEndpointProvisioningFailureReason = Schema.Literals([
   "claim-lost",
   "endpoint-mismatch",
   "invalid-tunnel-response",
+  "private-endpoint-required",
 ]);
 
 export class ManagedEndpointProvisioningFailed extends Schema.TaggedError<ManagedEndpointProvisioningFailed>()(

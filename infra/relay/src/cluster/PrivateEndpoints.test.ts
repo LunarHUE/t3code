@@ -69,7 +69,9 @@ describe("private endpoints", () => {
       const denied = yield* provider
         .provision({ userId: "other", environmentId: "env", origin })
         .pipe(Effect.result);
-      expect(Result.isFailure(denied)).toBe(true);
+      expect(Result.isFailure(denied) && denied.failure).toMatchObject({
+        reason: "private-endpoint-required",
+      });
       expect(yield* provider.deprovision({ userId: "owner", environmentId: "env" })).toBe(true);
       expect(cleared).toContain(endpoints[0]!.endpointKey);
     }).pipe(Effect.provide(layer)),

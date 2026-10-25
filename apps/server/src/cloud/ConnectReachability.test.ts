@@ -60,6 +60,22 @@ describe("classifyReachability", () => {
     ).toMatchObject({ cause: "dns_failed" });
   });
 
+  it("judges a private endpoint by its own address, without cloudflared", () => {
+    const privateEndpoint = (endpoint: ReachabilityFacts["endpoint"]) =>
+      classifyReachability(
+        facts({ privateEndpointUrl: "https://box-1.dev.example.test/", connector: null, endpoint }),
+        checkedAt,
+      );
+    expect(privateEndpoint({ kind: "status", status: 200 })).toMatchObject({
+      status: "reachable",
+    });
+    expect(privateEndpoint({ kind: "status", status: 404 })).toMatchObject({
+      cause: "unexpected_response",
+    });
+    expect(privateEndpoint({ kind: "dns_failed" })).toMatchObject({ cause: "dns_failed" });
+    expect(privateEndpoint({ kind: "network_error" })).toMatchObject({ cause: "timeout" });
+  });
+
   it("waits on a connector that has not connected while the edge answers", () => {
     expect(
       classifyReachability(facts({ connector: notConnected, edgeReachable: true }), checkedAt),

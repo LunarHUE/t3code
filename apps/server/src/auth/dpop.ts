@@ -66,6 +66,10 @@ export const verifyRequestDpopProof = Effect.fn("dpop.verifyRequestDpopProof")(f
       diagnostic: "Invalid DPoP request URL.",
     });
   }
+  // Traefik forwards TLS WebSocket upgrades as `wss`; toURL only treats `https` as secure.
+  if (input.request.headers["x-forwarded-proto"] === "wss") {
+    url.value.protocol = "https:";
+  }
   const now = yield* DateTime.now;
   const result = verifyDpopProof({
     proof,

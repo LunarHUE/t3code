@@ -896,12 +896,18 @@ export const layerClientApi = HttpApiBuilder.group(
                 traceId,
               }),
             ManagedEndpointProvisioningFailed: (error, traceId) =>
-              new RelayEnvironmentLinkUnavailableError({
-                code: "environment_link_unavailable",
-                reason: "managed_endpoint_provisioning_failed",
-                provisioningStage: error.stage,
-                traceId,
-              }),
+              error.reason === "private-endpoint-required"
+                ? new RelayEnvironmentLinkUnavailableError({
+                    code: "environment_link_unavailable",
+                    reason: "private_endpoint_required",
+                    traceId,
+                  })
+                : new RelayEnvironmentLinkUnavailableError({
+                    code: "environment_link_unavailable",
+                    reason: "managed_endpoint_provisioning_failed",
+                    provisioningStage: error.stage,
+                    traceId,
+                  }),
             ManagedEndpointOriginNotAllowed: (_error, traceId) =>
               new RelayEnvironmentLinkProofInvalidError({
                 code: "environment_link_proof_invalid",
