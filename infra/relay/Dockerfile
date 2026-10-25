@@ -1,7 +1,7 @@
 FROM node:26.12.1-bookworm-slim AS dependencies
 WORKDIR /app
 RUN npm install --global pnpm@12.14.0
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs tsconfig.base.json ./
 COPY patches ./patches
 COPY packages ./packages
 COPY infra/relay/package.json ./infra/relay/package.json
