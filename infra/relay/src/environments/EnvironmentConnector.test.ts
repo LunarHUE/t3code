@@ -231,6 +231,7 @@ function makeLinks(
         },
         linkedAt: "2026-05-25T00:00:00.000Z",
         environmentPublicKey: environmentKeyPair.publicKey,
+        managedTunnelsEnabled: true,
         ...overrides,
       }),
     findActiveManagedForEnvironment: () => Effect.succeed([]),

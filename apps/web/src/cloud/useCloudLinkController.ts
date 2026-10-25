@@ -38,10 +38,12 @@ function isManagedTunnelActive(
   relayProviderKind: RelayManagedEndpointProviderKind | undefined,
 ) {
   const localManagedTunnel = linkState.managedTunnelActive ?? linkState.linked;
+  // Private relays advertise a reachable endpoint with the manual provider kind.
+  const managedProviderKind = linkState.privateNetwork === true ? "manual" : "cloudflare_tunnel";
   return (
     linkState.linkRevoked !== true &&
     localManagedTunnel &&
-    (relayProviderKind === undefined || relayProviderKind === "cloudflare_tunnel")
+    (relayProviderKind === undefined || relayProviderKind === managedProviderKind)
   );
 }
 
@@ -166,6 +168,7 @@ export function useCloudLinkController() {
           target,
           accountToken,
           mode: desired.managedTunnel ? "managed" : "publish_only",
+          ...(currentLinkState.privateNetwork ? { privateNetwork: true } : {}),
         });
         if (linkResult._tag === "Failure") {
           if (!isAtomCommandInterrupted(linkResult)) {

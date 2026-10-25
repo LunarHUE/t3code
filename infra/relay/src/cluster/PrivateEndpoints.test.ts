@@ -131,6 +131,7 @@ describe("private endpoints", () => {
         httpBaseUrl: "https://box-1.dev.example.test/",
         wsBaseUrl: "wss://box-1.dev.example.test/ws",
       },
+      managedTunnelsEnabled: true,
     } as RelayLinkedEnvironmentRecord;
     const input = { link, allocation: null, baseDomain: undefined, privateEndpoints: [] };
     expect(Result.isFailure(validateManagedEndpoint(input))).toBe(true);
@@ -153,6 +154,7 @@ describe("private endpoints", () => {
         httpBaseUrl: endpoints[0]!.httpBaseUrl,
         wsBaseUrl: endpoints[0]!.wsBaseUrl,
       },
+      managedTunnelsEnabled: true,
     } as RelayLinkedEnvironmentRecord;
     const input = { link, allocation: null, baseDomain: undefined };
     expect(Result.isFailure(validateManagedEndpoint(input))).toBe(true);
@@ -173,5 +175,24 @@ describe("private endpoints", () => {
         }),
       ),
     ).toBe(true);
+  });
+  it("reports publish-only links as unmanaged on a private relay", () => {
+    const link = {
+      environmentId: "desktop",
+      endpoint: {
+        providerKind: "manual",
+        httpBaseUrl: "http://127.0.0.1:3773/",
+        wsBaseUrl: "ws://127.0.0.1:3773/ws",
+      },
+      managedTunnelsEnabled: false,
+    } as RelayLinkedEnvironmentRecord;
+    const result = validateManagedEndpoint({
+      link,
+      allocation: null,
+      baseDomain: undefined,
+      privateEndpoints: [],
+      privateEndpointDomains: ["dev.example.test"],
+    });
+    expect(Result.isFailure(result) && result.failure.reason).toBe("endpoint_provider_not_managed");
   });
 });
