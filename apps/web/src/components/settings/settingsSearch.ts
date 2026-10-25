@@ -119,7 +119,7 @@ export function sourceControlHostSettingsSearchId(kind: string) {
 }
 
 /** Each host's own settings: its accounts and token, or the fields of its settings form. */
-export function sourceControlHostSearchItems(
+function sourceControlHostSearchItems(
   definitions: ReadonlyArray<SourceControlDefinition>,
 ): ReadonlyArray<
   SettingsSearchItem & { readonly id: ReturnType<typeof sourceControlHostSettingsSearchId> }

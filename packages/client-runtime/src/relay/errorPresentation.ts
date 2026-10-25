@@ -75,7 +75,7 @@ export function relayProtectedErrorMessage(error: RelayProtectedError): string {
 
 // The relay cuts off a request it cannot finish in time with a 504 that no
 // endpoint declares, so the client sees only the status.
-export const RELAY_GATEWAY_TIMEOUT_MESSAGE =
+const RELAY_GATEWAY_TIMEOUT_MESSAGE =
   "Relay timed out before it finished the request (HTTP 504). Try again in a few minutes. If it keeps failing, copy the trace ID when you report it.";
 
 export function relayRequestFailureDetail(error: {
