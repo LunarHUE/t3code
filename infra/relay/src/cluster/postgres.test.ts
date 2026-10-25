@@ -4,6 +4,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as PgClient from "@effect/sql-pg/PgClient";
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
 import * as Effect from "effect/Effect";
+import * as DateTime from "effect/DateTime";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import { RelayConfiguration } from "../Config.ts";
@@ -30,9 +31,9 @@ const database = Layer.effect(RelayDb, PgDrizzle.makeWithDefaults()).pipe(
   ),
 );
 const services = Layer.merge(Inbox.layer, RateLimiter.layer).pipe(Layer.provideMerge(database));
-const hook = (id: string) => ({
+const makeHook = (id: string, receivedAt: string) => ({
   id,
-  receivedAt: "2026-01-01T00:00:00.000Z",
+  receivedAt,
   method: "POST",
   rawHookId: "hook",
   rawToken: "secret",
@@ -43,8 +44,11 @@ const hook = (id: string) => ({
 });
 
 describe.skipIf(!url)("cluster PostgreSQL adapters", () => {
-  it.effect("persists, deduplicates, caps, wakes and clears held webhooks", () =>
+  // PostgreSQL expires inbox rows against its wall clock.
+  it.live("persists, deduplicates, caps, wakes and clears held webhooks", () =>
     Effect.gen(function* () {
+      const receivedAt = DateTime.formatIso(yield* DateTime.now);
+      const hook = (id: string) => makeHook(id, receivedAt);
       yield* Inbox.migrate;
       const { $client: sql } = yield* RelayDb;
       yield* sql`DELETE FROM relay_cluster_hook_inbox`;
@@ -74,8 +78,9 @@ describe.skipIf(!url)("cluster PostgreSQL adapters", () => {
       expect(yield* inbox.wake(base)).toBe(false);
     }).pipe(Effect.provide(services)),
   );
-  it.effect("retains unreachable deliveries and sends the same delivery ID after recovery", () =>
+  it.live("retains unreachable deliveries and sends the same delivery ID after recovery", () =>
     Effect.gen(function* () {
+      const receivedAt = DateTime.formatIso(yield* DateTime.now);
       let status = 503;
       const ids: Array<string | undefined> = [];
       const server = NodeHttp.createServer((request, response) => {
@@ -98,7 +103,7 @@ describe.skipIf(!url)("cluster PostgreSQL adapters", () => {
           yield* inbox.hold({
             endpointKey: "delivery-test",
             baseUrl: `http://127.0.0.1:${address.port}/`,
-            hook: hook("retry-me"),
+            hook: makeHook("retry-me", receivedAt),
           });
           yield* worker.drain;
           const [retained] = yield* sql<{
