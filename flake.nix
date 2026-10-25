@@ -12,11 +12,11 @@
       targets = {
         x86_64-linux = {
           arch = "linux-x64";
-          hash = "sha256-Hsips63Y+jHl34Cm2milHtgXL38FsdjQD2CDcMoFbcM=";
+          hash = "sha256-cl/zDG7soJhJBf11Dz7SKlOOngUqaF7DKY89XxPtYZY=";
         };
         aarch64-linux = {
           arch = "linux-arm64";
-          hash = "sha256-H2GOcUni9E1QMzuKqIjF3u3OROtEyGMM/ZGKxLnjqKQ=";
+          hash = "sha256-wVjQYe7nuCZFG+4wZFrtfljegJp9SFJHhL4idOEW0CA=";
         };
       };
       forAllSystems =
