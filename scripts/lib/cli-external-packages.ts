@@ -61,8 +61,9 @@ export function findInlinedExternalPackages(source: string): {
   readonly inlined: ReadonlyArray<string>;
   readonly inlinedPackages: ReadonlyArray<string>;
 } {
-  // Rolldown marks each inlined module with a `//#region <path>` comment.
-  const regionPattern = /\/\/#region\s+(\S+)/g;
+  // Rolldown emits plain source-path comments; older bundles used #region markers.
+  const regionPattern =
+    /^\/\/(?:#region\s+(\S+)|[ \t]+((?:\.\.?\/|src\/|node_modules\/)\S+\.(?:[cm]?[jt]sx?|json)))[ \t]*$/gm;
   const packagePattern = /node_modules\/((?:@[^/\s]+\/)?[^/\s]+)\//g;
 
   let regionCount = 0;
@@ -70,7 +71,7 @@ export function findInlinedExternalPackages(source: string): {
   const inlinedPackages = new Set<string>();
   for (const region of source.matchAll(regionPattern)) {
     regionCount += 1;
-    const regionPath = region[1] ?? "";
+    const regionPath = region[1] ?? region[2] ?? "";
     for (const candidate of regionPath.matchAll(packagePattern)) {
       const name = candidate[1];
       if (name === undefined || name === ".pnpm") continue;

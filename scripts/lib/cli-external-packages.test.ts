@@ -123,6 +123,20 @@ it.layer(NodeServices.layer)("external package dependency closure", (it) => {
 });
 
 describe("findInlinedExternalPackages", () => {
+  it("recognizes current Rolldown source-path comments and ignores prose", () => {
+    const source = [
+      "// src/bin.ts",
+      "// ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/BigInt.js",
+      "// ../../node_modules/.pnpm/node-gyp-build@4.8.4/node_modules/node-gyp-build/index.js",
+      "// Do not inline node_modules/node-pty/index.js in the bundle.",
+    ].join("\n");
+    const result = findInlinedExternalPackages(source);
+
+    assert.strictEqual(result.regionCount, 3);
+    assert.deepStrictEqual(result.inlinedPackages, ["effect", "node-gyp-build"]);
+    assert.deepStrictEqual(result.inlined, ["node-gyp-build"]);
+  });
+
   const region = (path: string) => `//#region ${path}
 var x = 1;
 //#endregion
