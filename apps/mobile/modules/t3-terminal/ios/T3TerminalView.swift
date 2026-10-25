@@ -22,17 +22,9 @@ private enum GhosttyRuntime {
   }
 }
 
-/// Encodes hardware-keyboard combos that UITextField never surfaces through its
-/// text-editing delegate (control combos, Escape, Tab, arrow keys) into the byte
-/// sequences a terminal expects.
-///
-/// Capture uses UIKeyCommand with `wantsPriorityOverSystemBehavior` rather than
-/// `pressesBegan`: while a text field is first responder, iPadOS routes hardware key
-/// events through the text-input system, which can consume presses before they reach
-/// responder press callbacks. Registered key commands are matched deterministically
-/// before that happens.
+/// While a text field is first responder, iPadOS may consume presses before pressesBegan.
+/// Priority UIKeyCommands capture terminal shortcuts before the text-input system handles them.
 private enum TerminalHardwareKeyEncoder {
-  /// Characters that produce a control byte when combined with Ctrl.
   private static let controlInputs = "abcdefghijklmnopqrstuvwxyz@[\\]^_-? "
 
   static func makeKeyCommands(action: Selector) -> [UIKeyCommand] {
@@ -97,7 +89,6 @@ private enum TerminalHardwareKeyEncoder {
   private static func controlSequence(for scalar: Unicode.Scalar) -> String? {
     switch scalar {
     case "a"..."z":
-      // Ctrl+A..Z -> 0x01..0x1A (Ctrl+C = ETX, Ctrl+Z = SUB, ...).
       return UnicodeScalar(scalar.value - 96).map(String.init)
     case " ", "@":
       return "\u{00}"
@@ -270,6 +261,14 @@ public final class T3TerminalView: ExpoView, UITextFieldDelegate {
       guard oldValue != focusRequest else { return }
       DispatchQueue.main.async { [weak self] in
         self?.requestKeyboardFocus()
+      }
+    }
+  }
+
+  var readOnly = false {
+    didSet {
+      if readOnly {
+        inputField.resignFirstResponder()
       }
     }
   }
@@ -610,7 +609,7 @@ public final class T3TerminalView: ExpoView, UITextFieldDelegate {
       guard let input = String(data: bytes, encoding: .utf8), !input.isEmpty else { return }
 
       DispatchQueue.main.async {
-        view.onInput(["data": input])
+        view.emitInput(input)
       }
     }, userdata)
   }
@@ -687,13 +686,13 @@ public final class T3TerminalView: ExpoView, UITextFieldDelegate {
   }
 
   private func requestKeyboardFocus() {
-    guard window != nil else { return }
+    guard window != nil, !readOnly else { return }
     inputField.becomeFirstResponder()
     textInputModeDidChange()
   }
 
   private func emitInput(_ data: String) {
-    guard !data.isEmpty else { return }
+    guard !readOnly, !data.isEmpty else { return }
     onInput(["data": data])
   }
 

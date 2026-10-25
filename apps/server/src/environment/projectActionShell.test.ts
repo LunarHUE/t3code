@@ -1,7 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import type { ProjectScript } from "@t3tools/contracts";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 
 import { resolveProjectAction } from "../../../../packages/client-runtime/src/projectActions.ts";
@@ -10,7 +10,7 @@ import * as ProcessRunner from "../processRunner.ts";
 it.layer(NodeServices.layer)("project action shell execution", (it) => {
   it.effect("passes metacharacters literally through the platform shell", () =>
     Effect.gen(function* () {
-      const platform = yield* HostProcessPlatform;
+      const platform = yield* HostProcess.Platform;
       const runner = yield* ProcessRunner.ProcessRunner;
       const windows = platform === "win32";
       const shell = windows ? "powershell.exe" : "/bin/sh";

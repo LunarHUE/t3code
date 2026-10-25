@@ -1,12 +1,4 @@
-import {
-  createContext,
-  useContext,
-  useState,
-  useMemo,
-  useCallback,
-  useRef,
-  type ReactNode,
-} from "react";
+import { createContext, useContext, useState, useRef, type ReactNode } from "react";
 import {
   clearSavedActionVariablesDraft,
   type ActionVariablesDraft,
@@ -28,33 +20,31 @@ export function ActionVariablesDraftProvider({ children }: { children: ReactNode
   const [drafts, setDrafts] = useState<Record<string, ActionVariablesDraft>>({});
   const pendingSaves = useRef(new Set<string>());
   const [savingScopes, setSavingScopes] = useState<ReadonlySet<string>>(new Set());
-  const setDraft = useCallback((key: string, draft: ActionVariablesDraft | null) => {
+  const setDraft = (key: string, draft: ActionVariablesDraft | null) => {
     setDrafts((current) => {
       const next = { ...current };
       if (draft) next[key] = draft;
       else delete next[key];
       return next;
     });
-  }, []);
-  const saveDraft = useCallback(
-    async (key: string, draft: ActionVariablesDraft, save: () => Promise<unknown>) => {
-      if (pendingSaves.current.has(key)) return;
-      pendingSaves.current.add(key);
+  };
+  const saveDraft = async (
+    key: string,
+    draft: ActionVariablesDraft,
+    save: () => Promise<unknown>,
+  ) => {
+    if (pendingSaves.current.has(key)) return;
+    pendingSaves.current.add(key);
+    setSavingScopes(new Set(pendingSaves.current));
+    try {
+      await save();
+      setDrafts((current) => clearSavedActionVariablesDraft(current, key, draft));
+    } finally {
+      pendingSaves.current.delete(key);
       setSavingScopes(new Set(pendingSaves.current));
-      try {
-        await save();
-        setDrafts((current) => clearSavedActionVariablesDraft(current, key, draft));
-      } finally {
-        pendingSaves.current.delete(key);
-        setSavingScopes(new Set(pendingSaves.current));
-      }
-    },
-    [],
-  );
-  const value = useMemo(
-    () => ({ drafts, setDraft, savingScopes, saveDraft }),
-    [drafts, setDraft, savingScopes, saveDraft],
-  );
+    }
+  };
+  const value = { drafts, setDraft, savingScopes, saveDraft };
   return <ActionVariablesDraftContext value={value}>{children}</ActionVariablesDraftContext>;
 }
 

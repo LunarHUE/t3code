@@ -348,3 +348,47 @@ it.effect("CLI does not send a stored credential to a different relay", () => {
     provideTestEnv,
   );
 });
+
+it.effect.each([
+  { status: 400, requiresLogin: true },
+  { status: 401, requiresLogin: true },
+  { status: 429, requiresLogin: false },
+  { status: 503, requiresLogin: false },
+])("classifies a $status refresh response for relay retries", ({ status, requiresLogin }) => {
+  const raw = new TextEncoder().encode(
+    JSON.stringify({
+      accessToken: "old",
+      refreshToken: "old-refresh",
+      expiresAtEpochMs: 0,
+      relayUrl: TEST_ENV.T3CODE_RELAY_URL,
+    }),
+  );
+  const server: DeviceFlowServer = {
+    requests: [],
+    tokenReplies: [{ status, body: JSON.stringify({ error: "invalid_grant" }) }],
+  };
+  return Effect.gen(function* () {
+    const manager = yield* CliTokenManager.CloudCliTokenManager;
+    const failure = yield* manager.getExisting.pipe(Effect.flip);
+    if (!CliTokenManager.isCloudCliCredentialRefreshError(failure)) {
+      return yield* Effect.die("Expected a credential refresh failure");
+    }
+    assert.equal(failure.status, status);
+    assert.equal(failure.requiresLogin, requiresLogin);
+    assert.equal(failure.oauthErrorCode, requiresLogin ? "invalid_grant" : undefined);
+    assert.lengthOf(server.requests, 1);
+  }).pipe(
+    Effect.provide(
+      CliTokenManager.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            layerDeviceFlow(server),
+            Layer.mock(ServerSecretStore.ServerSecretStore, { get: () => Effect.succeedSome(raw) }),
+            Layer.mock(ExternalLauncher.ExternalLauncher, { launchBrowser: () => Effect.void }),
+          ),
+        ),
+      ),
+    ),
+    provideTestEnv,
+  );
+});

@@ -1,4 +1,5 @@
 import { connectLoopbackRedirectUri, DEFAULT_HOSTED_APP_URL } from "@t3tools/shared/connectAuth";
+import { isRelayTracingEnabled } from "@t3tools/shared/otelEnvironment";
 import { normalizeSecureRelayUrl } from "@t3tools/shared/relayUrl";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
@@ -69,6 +70,10 @@ export function resolveRelayClientTracingConfig(
   env: Readonly<Record<string, string | undefined>> = process.env,
   fallback = buildTimeRelayClientTracing,
 ) {
+  if (!isRelayTracingEnabled(env)) {
+    return null;
+  }
+
   const tracesUrl = env.T3CODE_RELAY_CLIENT_OTLP_TRACES_URL?.trim() || fallback.tracesUrl;
   const tracesDataset =
     env.T3CODE_RELAY_CLIENT_OTLP_TRACES_DATASET?.trim() || fallback.tracesDataset;

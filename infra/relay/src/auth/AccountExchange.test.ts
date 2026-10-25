@@ -1,3 +1,5 @@
+import * as Clock from "effect/Clock";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Native key generation and signing produce independent authentication fixtures.
 import * as NodeCrypto from "node:crypto";
 import * as Crypto from "@effect/platform-node/NodeCrypto";
 import { expect, it } from "@effect/vitest";
@@ -36,16 +38,15 @@ const config = RelayConfiguration.of({
   managedEndpointBaseDomain: undefined,
   managedEndpointNamespace: undefined,
 });
-// @effect-diagnostics-next-line globalDate:off -- The web handler runs on its own live runtime clock.
-const now = Math.floor(Date.now() / 1000);
 const decodeToken = Schema.decodeUnknownEffect(
   Schema.Struct({ access_token: Schema.String, token_type: Schema.String }),
 );
-it.effect(
+it.live(
   "exchanges account access for user-bound DPoP and rejects using DPoP as account access",
   () =>
     Effect.gen(function* () {
       const user = { id: accountUserId("https://id.test", "person") };
+      const now = Math.floor((yield* Clock.currentTimeMillis) / 1000);
       const account = yield* issueAccountToken(config, user, now);
       const tokenLayer = Tokens.layer.pipe(
         Layer.provide(Layer.succeed(RelayConfiguration, config)),

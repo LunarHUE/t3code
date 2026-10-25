@@ -95,14 +95,16 @@ export class ElectronDialog extends Context.Service<
     readonly pickFiles: (
       input: ElectronDialogPickFilesInput,
     ) => Effect.Effect<readonly string[], ElectronDialogPickFilesError>;
+    /** Pass `owner` to attach the box to that window so it cannot fall behind it. */
     readonly showMessageBox: (
       options: Electron.MessageBoxOptions,
+      owner?: Electron.BrowserWindow,
     ) => Effect.Effect<Electron.MessageBoxReturnValue, ElectronDialogShowMessageBoxError>;
     readonly showErrorBox: (title: string, content: string) => Effect.Effect<void>;
   }
 >()("@t3tools/desktop/electron/ElectronDialog") {}
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = ElectronDialog.of({
   pickFolder: Effect.fn("desktop.electron.dialog.pickFolder")(function* (input) {
     const ownerWindowId = Option.match(input.owner, {
@@ -164,9 +166,12 @@ export const make = ElectronDialog.of({
     });
     return result.canceled ? [] : result.filePaths;
   }),
-  showMessageBox: (options) =>
+  showMessageBox: (options, owner) =>
     Effect.tryPromise({
-      try: () => Electron.dialog.showMessageBox(options),
+      try: () =>
+        owner === undefined
+          ? Electron.dialog.showMessageBox(options)
+          : Electron.dialog.showMessageBox(owner, options),
       catch: (cause) =>
         new ElectronDialogShowMessageBoxError({
           type: options.type ?? null,

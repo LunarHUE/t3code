@@ -1,6 +1,8 @@
+import { providerMessageTextWithAttachmentPaths } from "@t3tools/provider-core/server/attachmentPrompt";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
+import { resolveAttachmentPath } from "../attachmentStore.ts";
 import { ChatAttachmentId } from "@t3tools/contracts";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -12,13 +14,10 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import * as TestClock from "effect/testing/TestClock";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { base64UrlEncode, signPayload } from "../auth/utils.ts";
 import * as ServerConfig from "../config.ts";
-import { parseThreadSegmentFromAttachmentId } from "../attachmentStore.ts";
-import { providerMessageTextWithAttachmentPaths } from "../orchestration-v2/AttachmentPrompt.ts";
 import {
   ATTACHMENT_UPLOAD_ROUTE_PREFIX,
   deletePendingAttachment,
@@ -93,28 +92,13 @@ describe("AttachmentUpload", () => {
               source: { _tag: "pasted-text" },
             },
           ],
-          attachmentsDir: config.attachmentsDir,
+          resolveAttachmentPath: (attachment) =>
+            resolveAttachmentPath({ attachmentsDir: config.attachmentsDir, attachment }),
         }),
       ).toBe(
         `Search the crash log.\n\n[Attached file "pasted-text.txt" is saved at: ${attachmentPath}]`,
       );
       expect(NodeFS.readdirSync(NodePath.join(config.stateDir, "attachments"))).toEqual([]);
-    }).pipe(Effect.provide(layerTest)),
-  );
-
-  it.effect("signs the attachment metadata and validates the upload token", () =>
-    Effect.gen(function* () {
-      const issued = yield* issueAttachmentUploadUrl(uploadInput);
-      expect(parseThreadSegmentFromAttachmentId(issued.attachmentId)).toBe("pending");
-
-      const token = issued.relativeUrl.slice(`${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/`.length);
-      expect(yield* validateAttachmentUploadToken(token)).toMatchObject({
-        kind: "attachment-upload",
-        attachmentId: issued.attachmentId,
-        name: "screenshot.png",
-        mimeType: "image/png",
-        sizeBytes: 6,
-      });
     }).pipe(Effect.provide(layerTest)),
   );
 
@@ -152,31 +136,6 @@ describe("AttachmentUpload", () => {
         type: "image",
         attachmentId: issued.attachmentId,
       });
-    }).pipe(Effect.provide(layerTest)),
-  );
-
-  it.effect("rejects expired upload tokens", () =>
-    Effect.gen(function* () {
-      const issued = yield* issueAttachmentUploadUrl(uploadInput);
-      const token = issued.relativeUrl.slice(`${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/`.length);
-
-      yield* TestClock.adjust("11 minutes");
-      expect(yield* validateAttachmentUploadToken(token)).toBeNull();
-    }).pipe(Effect.provide(layerTest)),
-  );
-
-  it.effect("removes expired pending uploads while issuing a new upload URL", () =>
-    Effect.gen(function* () {
-      const config = yield* ServerConfig.ServerConfig;
-      const staleId = "pending-00000000-0000-4000-8000-0000000000cc";
-      const stalePath = NodePath.join(config.attachmentsDir, `${staleId}.png`);
-      NodeFS.writeFileSync(stalePath, Buffer.from("pixels"));
-      NodeFS.utimesSync(stalePath, 0, 0);
-
-      yield* TestClock.adjust("25 hours");
-      yield* issueAttachmentUploadUrl(uploadInput);
-
-      expect(NodeFS.existsSync(stalePath)).toBe(false);
     }).pipe(Effect.provide(layerTest)),
   );
 

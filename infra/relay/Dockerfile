@@ -1,6 +1,6 @@
-FROM node:24.13.1-bookworm-slim AS dependencies
+FROM node:26.12.1-bookworm-slim AS dependencies
 WORKDIR /app
-RUN npm install --global pnpm@11.10.0
+RUN npm install --global pnpm@12.14.0
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY patches ./patches
 COPY packages ./packages
@@ -9,7 +9,7 @@ COPY infra/relay/package.json ./infra/relay/package.json
 RUN pnpm install --frozen-lockfile --ignore-scripts --filter t3code-relay...
 COPY infra/relay ./infra/relay
 
-FROM node:24.13.1-bookworm-slim
+FROM node:26.12.1-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=dependencies --chown=node:node /app /app

@@ -96,7 +96,6 @@ function SettingsScopeBoundary({ pathname, children }: { pathname: string; child
   ) {
     return children;
   }
-  // Keep the scope sentence on screen so the selection can be changed back.
   if (scope.kind === "unavailable")
     return (
       <SettingsPageContainer>
@@ -119,7 +118,11 @@ function SettingsContentLayout() {
   const location = useLocation();
   const navigateToMainApp = useNavigateToMainApp();
   useEscapeToGoBack(navigateToMainApp);
-  const { search } = useSettingsScope();
+  const { search, environment } = useSettingsScope();
+  const contentScopeKey =
+    location.pathname === "/settings/diagnostics" || location.pathname === "/settings/providers"
+      ? environment?.environmentId
+      : JSON.stringify(search);
   const [restoreSignal, setRestoreSignal] = useState(0);
 
   return (
@@ -138,10 +141,7 @@ function SettingsContentLayout() {
           </div>
         </WorkspacePageHeader>
 
-        <div
-          key={`${JSON.stringify(search)}:${restoreSignal}`}
-          className="min-h-0 flex flex-1 flex-col"
-        >
+        <div key={`${contentScopeKey}:${restoreSignal}`} className="min-h-0 flex flex-1 flex-col">
           <SettingsScopeBoundary pathname={location.pathname}>
             <Outlet />
           </SettingsScopeBoundary>
@@ -160,8 +160,7 @@ function SettingsRouteLayout() {
       search={rawSearch}
       singleEnvironment={pathname === "/settings/providers" || pathname === "/settings/actions"}
       onChange={(next) => {
-        // Send every axis so the retain middleware sees an explicit target
-        // even when the choice is "all", which is the absence of a key.
+        // Send every axis so retain middleware recognizes "all" as an explicit target.
         void navigate({
           to: pathname,
           search: () => ({

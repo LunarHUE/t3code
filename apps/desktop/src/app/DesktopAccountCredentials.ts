@@ -94,7 +94,7 @@ const make = Effect.gen(function* () {
         yield* requireEncryption;
         const encrypted = yield* storage.encryptString(value);
         yield* fs.makeDirectory(directory, { recursive: true, mode: 0o700 });
-        const temporary = `${file}.${yield* crypto.randomUUIDv4}.tmp`;
+        const temporary = `${file}.${yield* crypto.randomUUIDv4()}.tmp`;
         yield* fs.writeFile(temporary, encrypted, { mode: 0o600 });
         yield* fs
           .rename(temporary, file)

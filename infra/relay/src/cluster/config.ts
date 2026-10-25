@@ -1,3 +1,4 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Node key objects validate and derive the configured signing key before the cluster starts.
 import * as NodeCrypto from "node:crypto";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";

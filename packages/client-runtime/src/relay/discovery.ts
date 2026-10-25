@@ -102,7 +102,7 @@ function relayAccountId(accountToken: string): Option.Option<string> {
   }
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
   const relay = yield* ManagedRelay.ManagedRelayClient;
   const session = yield* ClientCapabilities.CloudSession;
@@ -223,11 +223,7 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
         error: Option.none(),
       });
 
-      // Signed out is the idle state, not a failure: the proactive refresh on
-      // credentials-changed also runs on sign-out and must settle back to a
-      // clean empty list. Only the session-level "no credentials" error is
-      // benign — relay-side auth failures (expired/invalid tokens) happen
-      // after this point and must surface as errors.
+      // Sign-out clears discovery. Relay authentication failures still surface after this check.
       const tokenResult = yield* Effect.result(session.accountToken);
       if (tokenResult._tag === "Failure") {
         const failure = tokenResult.failure;
@@ -333,10 +329,6 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
             yield* Ref.set(activeAccountId, Option.none());
             yield* Ref.set(offlineReportFingerprints, new Map());
             yield* SubscriptionRef.set(state, EMPTY_RELAY_ENVIRONMENT_DISCOVERY_STATE);
-            // Refresh proactively — this wakeup fires when a session activates
-            // (sign-in or cold start), and the list should be populated before
-            // any screen asks for it. A signed-out refresh settles back to the
-            // clean empty state.
             yield* refresh.pipe(Effect.forkScoped);
           })
         : Effect.void,

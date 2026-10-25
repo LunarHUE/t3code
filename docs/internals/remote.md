@@ -12,6 +12,10 @@ An environment keeps its ID across server restarts and endpoint changes. Saved
 connections are local to a client profile; the server's identity and state are
 not. A repository identity can correlate clones across environments, but never
 routes work between them. A project and its threads belong to one environment.
+The canonical key follows the `upstream` remote when one exists, so pull request
+features target the repository a fork tracks. A fork also reports its own
+`origin`, and clients group and label by that, so a fork never collapses into a
+checkout of its upstream.
 
 [Environment ID initialization](../../apps/server/src/environment/ServerEnvironment.ts)
 must publish a complete ID atomically. Repair of an empty ID file retains a
@@ -43,12 +47,23 @@ A connected server reports the LAN and tailnet addresses it is bound to, and the
 client saves them as learned routes. A learned route reuses the credential of
 the route it was learned over: the T3 Connect access token, which is not bound
 to an origin because each DPoP proof names the URL it signs, or the paired
-bearer token. Learned routes the server stops reporting are dropped, which is
-how a changed LAN address replaces the old one; routes the user saved are never
-touched. The reported addresses are hints like any advertised endpoint, so a
+bearer token. A paired token only learns a plain HTTP address off the tailnet
+when it was itself paired over plain HTTP, so a token paired over HTTPS never
+starts travelling unencrypted. Learned routes the server stops reporting are
+dropped, which is how a changed LAN address replaces the old one; routes the
+user saved are never touched. The reported addresses are hints like any advertised endpoint, so a
 learned route still has to answer as this environment before it is used.
 
-GitHub routing trust covers the whole route list. Adding or changing a route
+A background service with no configured host is what makes this work for
+headless machines. It listens on every IPv4 interface and closes each
+connection unless both addresses of the direct peer are loopback, private, or
+tailnet IPv4. That keeps a VPS's public address closed, including a cloud VM
+whose public address is NATed to a private interface. It is not a firewall:
+T3 Connect and Tailscale Serve reach the server over loopback by design, and a
+proxy that rewrites the source address looks private. One listener per address would
+miss a DHCP change, and the wildcard keeps the reported addresses current.
+
+Pull request routing trust covers the whole route list. Adding or changing a route
 revokes it; reordering does not, because the same addresses remain trusted.
 
 ## Hosted web is a client

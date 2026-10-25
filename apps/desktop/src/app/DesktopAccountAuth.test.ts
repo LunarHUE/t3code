@@ -3,7 +3,7 @@ import * as NodeHttp from "node:http";
 import * as NodePath from "@effect/platform-node/NodePath";
 import { codexAuthHandoffUrl, readCodexAuthDelivery } from "@t3tools/shared/codexAuthHandoff";
 import { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
-import { HostProcessArguments } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -39,6 +39,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
+import * as DesktopWebLinks from "./DesktopWebLinks.ts";
 import * as DesktopAccountAuth from "./DesktopAccountAuth.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import * as DesktopPreReadyFileSystem from "./DesktopPreReadyFileSystem.ts";
@@ -55,6 +56,7 @@ const layerDesktopAccountAuth = (
     openSystemSettings: () => Effect.succeed(false),
     copyText: () => Effect.void,
   },
+  appOverrides: Partial<ElectronApp.ElectronApp["Service"]> = {},
 ) => {
   const environment = DesktopEnvironment.DesktopEnvironment.of({
     stateDir: "/tmp/t3-state",
@@ -64,10 +66,12 @@ const layerDesktopAccountAuth = (
   } as unknown as DesktopEnvironment.DesktopEnvironment["Service"]);
 
   const electronApp = {
+    on: () => Effect.void,
     setPath: (name: string, value: string) =>
       Effect.sync(() => {
         events.push(`setPath:${name}:${value}`);
       }),
+    ...appOverrides,
   } as unknown as ElectronApp.ElectronApp["Service"];
 
   return DesktopAccountAuth.layer.pipe(
@@ -174,9 +178,15 @@ describe("DesktopAccountAuth", () => {
 
       assert.isTrue(Exit.isSuccess(exit));
       assert.equal(quit.mock.calls.length, 0);
-      assert.deepEqual(registeredEvents, ["open-url", "second-instance"]);
+      assert.deepEqual(registeredEvents, ["second-instance", "open-url", "open-file"]);
     }).pipe(
-      Effect.provide(layerDesktopAccountAuth()),
+      Effect.provide(
+        layerDesktopAccountAuth(true, [], "darwin", undefined, undefined, electronApp),
+      ),
+      Effect.provideService(DesktopWebLinks.DesktopWebLinks, {
+        receive: () => Effect.void,
+        setRendererReady: () => Effect.void,
+      }),
       Effect.provideService(ElectronApp.ElectronApp, electronApp),
       Effect.provideService(ElectronWindow.ElectronWindow, electronWindow),
     );
@@ -202,9 +212,15 @@ describe("DesktopAccountAuth", () => {
 
       assert.isTrue(Exit.hasInterrupts(exit));
       assert.equal(quit.mock.calls.length, 1);
-      assert.deepEqual(registeredEvents, []);
+      assert.deepEqual(registeredEvents, ["second-instance"]);
     }).pipe(
-      Effect.provide(layerDesktopAccountAuth()),
+      Effect.provide(
+        layerDesktopAccountAuth(true, [], "darwin", undefined, undefined, electronApp),
+      ),
+      Effect.provideService(DesktopWebLinks.DesktopWebLinks, {
+        receive: () => Effect.void,
+        setRendererReady: () => Effect.void,
+      }),
       Effect.provideService(ElectronApp.ElectronApp, electronApp),
       Effect.provideService(ElectronWindow.ElectronWindow, electronWindow),
     );
@@ -250,7 +266,13 @@ it.effect(
       assert.equal(event.preventDefault.mock.calls.length, 1);
     }).pipe(
       Effect.scoped,
-      Effect.provide(layerDesktopAccountAuth()),
+      Effect.provide(
+        layerDesktopAccountAuth(true, [], "darwin", undefined, undefined, electronApp),
+      ),
+      Effect.provideService(DesktopWebLinks.DesktopWebLinks, {
+        receive: () => Effect.void,
+        setRendererReady: () => Effect.void,
+      }),
       Effect.provideService(ElectronApp.ElectronApp, electronApp),
       Effect.provideService(ElectronWindow.ElectronWindow, electronWindow),
     );
@@ -328,8 +350,12 @@ it.effect.each(["startup", "open-url"] as const)(
         assert.strictEqual(delivery?.flowId, request.flowId);
         assert.strictEqual(delivery?.returnUrl, request.returnUrl);
       }).pipe(
-        Effect.provide(layerDesktopAccountAuth(true, [], "darwin", undefined, shell)),
-        Effect.provideService(HostProcessArguments, entry === "startup" ? ["t3", link] : ["t3"]),
+        Effect.provide(layerDesktopAccountAuth(true, [], "darwin", undefined, shell, electronApp)),
+        Effect.provideService(DesktopWebLinks.DesktopWebLinks, {
+          receive: () => Effect.void,
+          setRendererReady: () => Effect.void,
+        }),
+        Effect.provideService(HostProcess.Arguments, entry === "startup" ? ["t3", link] : ["t3"]),
         Effect.provideService(ElectronApp.ElectronApp, electronApp),
         Effect.provideService(
           ElectronWindow.ElectronWindow,

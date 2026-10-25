@@ -14,6 +14,7 @@ import {
   RelayEnvironmentMintResponseProofPayload,
   RelayCloudMintCredentialProofPayload,
   RelayEnvironmentConnectNotAuthorizedReason,
+  RelayEnvironmentEndpointFailure,
   type RelayEnvironmentConnectResponse,
   type RelayEnvironmentStatusResponse,
   type RelayManagedEndpoint,
@@ -43,6 +44,7 @@ import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientError from "effect/http/HttpClientError";
 
 import { privateEndpointUnderDomains } from "../privateEndpoints.ts";
+import { diagnoseEndpointFailure } from "./endpointFailure.ts";
 import * as EnvironmentLinks from "./EnvironmentLinks.ts";
 import * as ManagedEndpointAllocations from "./ManagedEndpointAllocations.ts";
 import * as RelayConfiguration from "../Config.ts";
@@ -90,6 +92,8 @@ export class EnvironmentMintRequestFailed extends Schema.TaggedError<Environment
     environmentId: Schema.String,
     operation: Schema.Literals(["connect", "status"]),
     cause: Schema.Defect(),
+    endpointFailure: Schema.optionalKey(RelayEnvironmentEndpointFailure),
+    endpointStatus: Schema.optionalKey(Schema.Number),
   },
 ) {
   override get message(): string {
@@ -164,10 +168,6 @@ const isEnvironmentHealthError = Schema.is(
   ]),
 );
 
-/**
- * Cleanup deleted this environment's tunnel and nothing has recorded a new
- * one, so the host is unreachable until it updates and requests recovery.
- */
 function offlineReasonFor(
   allocation: ManagedEndpointAllocations.ManagedEndpointAllocation | null,
 ): { readonly offlineReason?: "tunnel_released" } {
@@ -306,14 +306,9 @@ export interface ManagedEndpointValidationFailure {
     RelayEnvironmentConnectNotAuthorizedReason,
     "client_proof_key_thumbprint_missing" | "environment_link_not_found"
   >;
-  /** Diagnostic span attributes; never contains secrets. */
   readonly attributes?: Record<string, string | boolean>;
 }
 
-/**
- * Checks that a link's relay-managed endpoint is backed by a ready allocation
- * on the configured base domain and still matches what the link recorded.
- */
 export function validateManagedEndpoint(input: {
   readonly link: EnvironmentLinks.RelayLinkedEnvironmentRecord;
   readonly allocation: ManagedEndpointAllocations.ManagedEndpointAllocation | null;
@@ -512,7 +507,7 @@ const make = Effect.gen(function* () {
       });
       const now = yield* DateTime.now;
       const expiresAt = DateTime.add(now, { minutes: 2 });
-      const nonce = yield* crypto.randomUUIDv4.pipe(
+      const nonce = yield* crypto.randomUUIDv4().pipe(
         Effect.mapError(
           (cause) =>
             new EnvironmentMintRequestFailed({
@@ -526,7 +521,7 @@ const make = Effect.gen(function* () {
         iss: relayIssuer,
         aud: `t3-env:${link.environmentId}`,
         sub: input.userId,
-        jti: yield* crypto.randomUUIDv4.pipe(
+        jti: yield* crypto.randomUUIDv4().pipe(
           Effect.mapError(
             (cause) =>
               new EnvironmentMintRequestFailed({
@@ -584,12 +579,17 @@ const make = Effect.gen(function* () {
                 error: environmentHealthRequestFailureMessage(probe.cause),
                 failureReason: environmentHealthRequestFailureReason(probe.cause),
               };
+        const diagnosis =
+          probe === undefined
+            ? { endpointFailure: "timeout" as const }
+            : yield* diagnoseEndpointFailure(probe.cause);
         const recorded = yield* recordProbeFailure(link.environmentId, startedRound);
         const { failures } = recorded;
         // A released tunnel is gone for good, so its last online answer is stale.
         const held = allocation?.tunnelReleasedAt ? undefined : recorded.held;
         yield* Effect.annotateCurrentSpan({
           "relay.environment_health.outcome": failure.outcome,
+          "relay.environment_health.endpoint_failure": diagnosis.endpointFailure,
           ...(failure.failureReason
             ? { "relay.environment_health.failure_reason": failure.failureReason }
             : {}),
@@ -614,6 +614,7 @@ const make = Effect.gen(function* () {
           status: "offline" as const,
           checkedAt,
           error: failure.error,
+          ...diagnosis,
           ...offlineReasonFor(allocation),
           traceId,
         };
@@ -680,7 +681,7 @@ const make = Effect.gen(function* () {
       });
       const now = yield* DateTime.now;
       const expiresAt = DateTime.add(now, { minutes: 2 });
-      const nonce = yield* crypto.randomUUIDv4.pipe(
+      const nonce = yield* crypto.randomUUIDv4().pipe(
         Effect.mapError(
           (cause) =>
             new EnvironmentMintRequestFailed({
@@ -694,7 +695,7 @@ const make = Effect.gen(function* () {
         iss: relayIssuer,
         aud: `t3-env:${link.environmentId}`,
         sub: input.userId,
-        jti: yield* crypto.randomUUIDv4.pipe(
+        jti: yield* crypto.randomUUIDv4().pipe(
           Effect.mapError(
             (cause) =>
               new EnvironmentMintRequestFailed({
@@ -732,13 +733,19 @@ const make = Effect.gen(function* () {
         .t3MintCredential({ payload: { proof } })
         .pipe(
           withoutRedirects,
-          Effect.mapError(
-            (cause) =>
-              new EnvironmentMintRequestFailed({
-                environmentId: input.environmentId,
-                operation: "connect",
-                cause,
-              }),
+          Effect.catch((cause) =>
+            diagnoseEndpointFailure(cause).pipe(
+              Effect.flatMap((diagnosis) =>
+                Effect.fail(
+                  new EnvironmentMintRequestFailed({
+                    environmentId: input.environmentId,
+                    operation: "connect",
+                    cause,
+                    ...diagnosis,
+                  }),
+                ),
+              ),
+            ),
           ),
           Effect.timeoutOption(Duration.millis(ENVIRONMENT_MINT_REQUEST_TIMEOUT_MS)),
           Effect.flatMap(

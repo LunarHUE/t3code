@@ -5,10 +5,10 @@
   default = pkgs.mkShell {
     packages = with pkgs; [
       bashInteractive
-      nodejs_24
+      nodejs_26
       # Corepack reads the pnpm version from package.json.
       (writeShellScriptBin "pnpm" ''
-        exec ${nodejs_24}/bin/corepack pnpm "$@"
+        exec ${corepack}/bin/corepack pnpm "$@"
       '')
       # node-pty builds through node-gyp on Linux.
       python3

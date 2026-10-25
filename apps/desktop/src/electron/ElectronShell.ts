@@ -21,8 +21,8 @@ const REMOTE_EDITOR_PROTOCOLS = new Set(
   }),
 );
 
-// Zed's host sits in the first path segment, so it needs its own userinfo ban.
-const ZED_SSH_PATHNAME = /^\/[^/@:]+\/.*$/;
+// Zed embeds [user@]host in the path; reject passwords and ports there.
+const ZED_SSH_PATHNAME = /^\/(?:[^/@:]+@)?[^/@:]+\/.*$/;
 
 const isRemoteEditorUrl = (url: URL) =>
   REMOTE_EDITOR_PROTOCOLS.has(url.protocol) &&
@@ -30,9 +30,13 @@ const isRemoteEditorUrl = (url: URL) =>
   url.password.length === 0 &&
   (url.protocol === "zed:"
     ? url.host === "ssh" && ZED_SSH_PATHNAME.test(url.pathname)
-    : url.host === "vscode-remote" &&
-      url.pathname.startsWith("/ssh-remote+") &&
-      url.pathname.length > "/ssh-remote+".length);
+    : url.protocol === "jetbrains:"
+      ? url.host === "gateway" &&
+        url.pathname === "/ssh/environment" &&
+        (url.searchParams.get("h") ?? "").length > 0
+      : url.host === "vscode-remote" &&
+        url.pathname.startsWith("/ssh-remote+") &&
+        url.pathname.length > "/ssh-remote+".length);
 
 export function parseSafeExternalUrl(rawUrl: unknown): Option.Option<string> {
   if (typeof rawUrl !== "string") {
@@ -57,13 +61,12 @@ export class ElectronShell extends Context.Service<
   ElectronShell,
   {
     readonly openExternal: (rawUrl: unknown) => Effect.Effect<boolean>;
-    /** Opens a known System Settings pane by identifier, not by URL. */
     readonly openSystemSettings: (pane: SystemSettingsPane) => Effect.Effect<boolean>;
     readonly copyText: (text: string) => Effect.Effect<void>;
   }
 >()("@t3tools/desktop/electron/ElectronShell") {}
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = ElectronShell.of({
   openExternal: (rawUrl) =>
     Option.match(parseSafeExternalUrl(rawUrl), {

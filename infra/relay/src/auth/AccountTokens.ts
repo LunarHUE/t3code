@@ -1,3 +1,4 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Broker persistence uses synchronous hashes for credential and account lookup keys.
 import * as NodeCrypto from "node:crypto";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";

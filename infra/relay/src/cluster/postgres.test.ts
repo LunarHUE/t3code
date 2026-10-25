@@ -32,8 +32,7 @@ const database = Layer.effect(RelayDb, PgDrizzle.makeWithDefaults()).pipe(
 const services = Layer.merge(Inbox.layer, RateLimiter.layer).pipe(Layer.provideMerge(database));
 const hook = (id: string) => ({
   id,
-  // @effect-diagnostics-next-line globalDate:off -- Match the real PostgreSQL clock in this integration fixture.
-  receivedAt: new Date().toISOString(),
+  receivedAt: "2026-01-01T00:00:00.000Z",
   method: "POST",
   rawHookId: "hook",
   rawToken: "secret",

@@ -1,5 +1,5 @@
 // @effect-diagnostics globalDate:off -- Promise adapter tests exercise clock expiry.
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { createAccountAuth } from "./accountAuth.ts";
 const user = { id: "account-one", email: "one@example.test" };
 const token = { access_token: "access", refresh_token: "refresh-next", expires_in: 600, user };
@@ -22,6 +22,11 @@ function setup(raw: string | null = null) {
 function existing(relayUrl = "https://relay.example.test", expiresAt = 0) {
   return JSON.stringify({ relayUrl, expiresAt, accessToken: "old", refreshToken: "refresh", user });
 }
+const NOW = 1_800_000_000_000;
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(NOW);
+});
 afterEach(() => vi.useRealTimers());
 describe("account session", () => {
   it("rejects credentials from another relay without sending them", async () => {
@@ -33,7 +38,7 @@ describe("account session", () => {
   });
   it("shares a rotating refresh across concurrent token readers", async () => {
     vi.useFakeTimers();
-    const { client, request, read } = setup(existing(undefined, Date.now() + 100_000));
+    const { client, request, read } = setup(existing(undefined, NOW + 100_000));
     await client.restore();
     vi.advanceTimersByTime(100_000);
     const response = Promise.withResolvers<Response>();
@@ -45,7 +50,7 @@ describe("account session", () => {
     expect(JSON.parse(read()!).refreshToken).toBe("refresh-next");
   });
   it("clears local credentials when relay revocation fails", async () => {
-    const { client, request, read } = setup(existing(undefined, Date.now() + 100000));
+    const { client, request, read } = setup(existing(undefined, NOW + 100000));
     await client.restore();
     request.mockRejectedValue(new Error("offline"));
     await expect(client.logout()).rejects.toThrow("offline");
@@ -191,7 +196,7 @@ describe("account session", () => {
   });
   it("does not restore a delayed credential after logout", async () => {
     const read = Promise.withResolvers<string | null>();
-    let stored: string | null = existing(undefined, Date.now() + 100000);
+    let stored: string | null = existing(undefined, NOW + 100000);
     const client = createAccountAuth({
       relayUrl: "https://relay.example.test",
       clientId: "t3-web",
@@ -204,7 +209,7 @@ describe("account session", () => {
     });
     const restored = client.restore();
     await client.logout();
-    read.resolve(existing(undefined, Date.now() + 100000));
+    read.resolve(existing(undefined, NOW + 100000));
     await restored;
     expect(client.user).toBeNull();
     expect(stored).toBeNull();

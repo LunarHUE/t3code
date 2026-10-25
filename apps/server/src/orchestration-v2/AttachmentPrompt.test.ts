@@ -9,7 +9,8 @@ import { assert, describe, it } from "@effect/vitest";
 import {
   isProviderNativeImageAttachment,
   providerMessageTextWithAttachmentPaths,
-} from "./AttachmentPrompt.ts";
+} from "@t3tools/provider-core/server/attachmentPrompt";
+import { resolveAttachmentPath } from "../attachmentStore.ts";
 
 const document = ChatFileAttachment.make({
   id: ChatAttachmentId.make("file-document"),
@@ -38,7 +39,8 @@ describe("provider attachment prompts", () => {
           source: { _tag: "pasted-text" },
         }),
       ],
-      attachmentsDir: "/workspace/shared-attachments",
+      resolveAttachmentPath: (attachment) =>
+        resolveAttachmentPath({ attachmentsDir: "/workspace/shared-attachments", attachment }),
     });
     assert.equal(
       text,
@@ -51,7 +53,8 @@ describe("provider attachment prompts", () => {
       providerMessageTextWithAttachmentPaths({
         text: "Review these.",
         attachments: [document, image],
-        attachmentsDir: "/attachments",
+        resolveAttachmentPath: (attachment) =>
+          resolveAttachmentPath({ attachmentsDir: "/attachments", attachment }),
       }),
       'Review these.\n\n[Attached file "spec.pdf" is saved at: /attachments/file-document.pdf]\n' +
         '\n[Attached image "diagram.png" is saved at: /attachments/file-image.png]',
@@ -72,7 +75,8 @@ describe("provider attachment prompts", () => {
     const text = providerMessageTextWithAttachmentPaths({
       text: "Fix this.",
       attachments: [captured],
-      attachmentsDir: "/attachments",
+      resolveAttachmentPath: (attachment) =>
+        resolveAttachmentPath({ attachmentsDir: "/attachments", attachment }),
     });
 
     assert.include(
@@ -122,7 +126,8 @@ describe("provider attachment prompts", () => {
     const text = providerMessageTextWithAttachmentPaths({
       text: "Describe this.",
       attachments: [captured],
-      attachmentsDir: "/attachments",
+      resolveAttachmentPath: (attachment) =>
+        resolveAttachmentPath({ attachmentsDir: "/attachments", attachment }),
     });
 
     assert.include(
@@ -152,7 +157,8 @@ describe("provider attachment prompts", () => {
     const text = providerMessageTextWithAttachmentPaths({
       text: "Fix this.",
       attachments,
-      attachmentsDir: "/attachments",
+      resolveAttachmentPath: (attachment) =>
+        resolveAttachmentPath({ attachmentsDir: "/attachments", attachment }),
     });
 
     assert.isAtMost(text.length, PROVIDER_SEND_TURN_MAX_INPUT_CHARS);
