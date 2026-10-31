@@ -52,6 +52,17 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { isNetworkPath } from "@t3tools/shared/path";
 
+// Newer Git (e.g. 2.56) reports a broken gitfile as "gitfile does not point to a
+// valid repository"; older Git (e.g. 2.50) says "not a git repository".
+const notARepositoryMessages = [
+  "not a git repository",
+  "gitfile does not point to a valid repository",
+];
+const isNotARepository = (stderr: string) => {
+  const message = stderr.toLowerCase();
+  return notARepositoryMessages.some((needle) => message.includes(needle));
+};
+
 const decodeCleanupThread = Schema.decodeUnknownEffect(
   Schema.fromJsonString(OrchestrationV2AppThreadJson),
 );
@@ -504,7 +515,7 @@ const make = Effect.gen(function* () {
         );
       if (result === null) return null;
       if (result.exitCode === 0 || result.exitCode === allowedExitCode) return result;
-      if (result.stderr.toLowerCase().includes("not a git repository")) return null;
+      if (isNotARepository(result.stderr)) return null;
       return yield* failure(
         result.stderr.trim().split(/\r?\n/)[0]?.slice(0, 1000) || "command failed",
       );
